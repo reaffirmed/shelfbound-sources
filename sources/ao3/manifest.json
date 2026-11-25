@@ -1,12 +1,13 @@
 {
   "id": "io.github.reaffirmed.ao3",
   "name": "Archive of Our Own",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "text",
   "format": "fic",
   "languages": ["en", "multi"],
   "contentRating": "explicit",
   "domains": ["archiveofourown.org"],
   "rateLimit": { "minIntervalMs": 3000 },
-  "capabilities": ["filters", "listings"]
+  "capabilities": ["filters", "listings", "account"],
+  "account": { "loginURL": "https://archiveofourown.org/users/login" }
 }

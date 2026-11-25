@@ -1,6 +1,10 @@
-// Archive of Our Own. Read-only and logged out: works restricted to registered users
-// can't be read here and say so. AO3 asks bots to go slowly, so the manifest spaces
-// requests three seconds apart and the app backs off further when the site answers 429.
+// Archive of Our Own. Works without an account; when the person signs in to AO3 in the
+// app (Settings > Accounts), the app keeps AO3's session cookie and sends it with every
+// request, and passes the username as host.settings.get("account"). Signed in, the source
+// also reads works restricted to registered users, the person's bookmarks, Marked for
+// Later, history and subscriptions, and can mark for later, subscribe and leave kudos.
+// AO3 asks bots to go slowly, so the manifest spaces requests three seconds apart and
+// the app backs off further when the site answers 429.
 
 const BASE = "https://archiveofourown.org";
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
@@ -29,16 +33,115 @@ function date(text) {
   return undefined;
 }
 
+function account() {
+  return host.settings.get("account") || null;
+}
+
+function slowDown(res) {
+  return res.status === 429 || (/Retry later/i.test(res.body) && res.body.length < 2000);
+}
+
 async function page(url) {
   const res = await host.fetch(url);
-  if (res.status === 429) throw new Error("AO3 asked us to slow down. Try again in a few minutes.");
+  if (slowDown(res)) throw new Error("AO3 asked us to slow down. Try again in a few minutes.");
   if (res.status === 404) throw new Error("That work was deleted or never existed.");
   if (/\/users\/login/.test(res.url) || /This work is only available to registered users/i.test(res.body)) {
-    throw new Error("This work is only for logged-in AO3 users, so it can't be read here.");
+    throw new Error(account()
+      ? "AO3 signed you out. Sign in again in Settings > Accounts to read this work."
+      : "This work is only for logged-in AO3 users. Sign in to AO3 in Settings > Accounts to read it.");
   }
   if (res.status < 200 || res.status >= 300) throw new Error("HTTP " + res.status + " from AO3");
-  if (/Retry later/i.test(res.body) && res.body.length < 2000) throw new Error("AO3 asked us to slow down. Try again in a few minutes.");
   return res.body;
+}
+
+/** The signed-in username from AO3's page header ("Hi, name!"), or null when logged out. */
+function signedInAs(html) {
+  const greeting = host.select(html, "#greeting a, ul.user.navigation a")
+    .find((a) => /^\/users\//.test(a.attrs.href || "") && /^Hi,/.test(a.text));
+  const m = greeting && /^\/users\/([^/?#]+)/.exec(greeting.attrs.href || "");
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function requireAccount() {
+  const name = account();
+  if (!name) throw new Error("Sign in to AO3 in Settings > Accounts first.");
+  return name;
+}
+
+/** Rails' CSRF token from a page AO3 rendered for this session. */
+function csrfToken(html) {
+  const meta = first(html, "meta[name=csrf-token]");
+  const input = first(html, "input[name=authenticity_token]");
+  const token = (meta && meta.attrs.content) || (input && input.attrs.value);
+  if (!token) throw new Error("AO3 didn't give a form token. Sign in again in Settings > Accounts.");
+  return token;
+}
+
+function form(fields) {
+  return fields.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
+}
+
+async function post(url, fields, token, method) {
+  const all = [["authenticity_token", token]].concat(method ? [["_method", method]] : []).concat(fields);
+  const res = await host.fetch({
+    url,
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "X-CSRF-Token": token,
+      "X-Requested-With": "XMLHttpRequest",
+      Accept: "application/json, text/javascript, */*",
+      Referer: BASE + "/",
+    },
+    body: form(all),
+  });
+  if (slowDown(res)) throw new Error("AO3 asked us to slow down. Try again in a few minutes.");
+  if (/\/users\/login/.test(res.url)) throw new Error("AO3 signed you out. Sign in again in Settings > Accounts.");
+  return res;
+}
+
+/** What the signed-in person has done with a work, read from the work page. */
+function workState(html, name) {
+  if (!name) return undefined;
+  const mark = first(html, "ul.work.navigation li.mark a");
+  const subscribe = first(html, "ul.work.navigation li.subscribe input[type=submit], ul.work.navigation li.subscribe button");
+  // The kudos list names everyone who left kudos, sometimes cut short; a missing name is unknown.
+  const kudosNames = host.select(html, "#kudos a").map((a) => /^\/users\/([^/?#]+)/.exec(a.attrs.href || "")).filter(Boolean).map((m) => m[1]);
+  const state = {};
+  if (mark) state.markedForLater = /Mark as Read/i.test(mark.text);
+  if (subscribe) state.subscribed = /Unsubscribe/i.test(subscribe.attrs.value || subscribe.text);
+  if (kudosNames.includes(encodeURIComponent(name)) || kudosNames.includes(name)) state.kudos = true;
+  return state;
+}
+
+// The person's own lists on AO3. All are public on AO3 except Marked for Later and history.
+const ACCOUNT_LISTS = [
+  { id: "bookmarks", title: "Bookmarks", subtitle: "Works you bookmarked on AO3", importable: true,
+    path: (u) => `/users/${u}/bookmarks`, item: "ol.bookmark.index.group > li.bookmark.blurb" },
+  { id: "later", title: "Marked for Later", subtitle: "Your reading list on AO3", importable: true,
+    path: (u) => `/users/${u}/readings?show=to-read`, item: "ol.reading.index.group > li.reading.blurb" },
+  { id: "history", title: "History", subtitle: "Works you opened on AO3, newest first",
+    path: (u) => `/users/${u}/readings`, item: "ol.reading.index.group > li.reading.blurb" },
+  { id: "subscriptions", title: "Subscriptions", subtitle: "Works you get update emails for", importable: true,
+    path: (u) => `/users/${u}/subscriptions?type=works` },
+];
+
+function withPage(path, pageNumber) {
+  return path + (path.includes("?") ? "&" : "?") + "page=" + (pageNumber || 1);
+}
+
+function subscriptionItems(html) {
+  // Subscriptions are a plain list: "<a href=/works/1>Title</a> by <a>author</a>".
+  return host.select(html, "dl.subscription.index.group dt").map((dt) => {
+    const link = host.select(dt.html, "a").find((a) => /^\/works\/\d+/.test(a.attrs.href || ""));
+    if (!link) return null;
+    return {
+      id: /^\/works\/(\d+)/.exec(link.attrs.href)[1],
+      title: link.text,
+      authors: host.select(dt.html, "a[rel=author]").map((a) => a.text),
+      format: "fic",
+    };
+  }).filter(Boolean);
 }
 
 const FILTERS = [
@@ -233,7 +336,78 @@ globalThis.source = {
       updatedAt: date((updated || {}).text) || date((first(html, "dl.stats dd.published") || {}).text),
       series: seriesParts(html),
       downloads: Object.keys(downloads).length ? downloads : undefined,
+      account: workState(html, account()),
     };
+  },
+
+  // Signed-in account, from AO3's header. Null when the session cookie is missing or expired.
+  async getAccount() {
+    const res = await host.fetch(`${BASE}/`);
+    if (slowDown(res)) throw new Error("AO3 asked us to slow down. Try again in a few minutes.");
+    const name = signedInAs(res.body);
+    return name ? { username: name, url: `${BASE}/users/${encodeURIComponent(name)}` } : null;
+  },
+
+  async getAccountLists() {
+    return ACCOUNT_LISTS.map(({ id, title, subtitle, importable }) => ({ id, title, subtitle, importable: Boolean(importable) }));
+  },
+
+  async getAccountList(id, pageNumber) {
+    const list = ACCOUNT_LISTS.find((l) => l.id === id);
+    if (!list) throw new Error("Unknown list: " + id);
+    const name = encodeURIComponent(requireAccount());
+    const html = await page(BASE + withPage(list.path(name), pageNumber));
+    if (!signedInAs(html)) throw new Error("AO3 signed you out. Sign in again in Settings > Accounts.");
+    const results = list.item ? host.select(html, list.item).map(blurb).filter(Boolean) : subscriptionItems(html);
+    const seen = new Set();
+    return {
+      results: results.filter((r) => !seen.has(r.id) && seen.add(r.id)),
+      hasMore: host.select(html, "ol.pagination li.next a").length > 0,
+    };
+  },
+
+  // Marks for later, subscribes or leaves kudos. Only ever called from a tap on the work's
+  // page, never from a sync, so the app can't remove anything on AO3 by itself.
+  async setWorkState(id, key, value) {
+    const name = requireAccount();
+    const workURL = `${BASE}/works/${encodeURIComponent(id)}?view_adult=true`;
+    const html = await page(workURL);
+    const before = workState(html, name) || {};
+    if (key === "markedForLater") {
+      if (Boolean(before.markedForLater) !== Boolean(value)) {
+        await page(`${BASE}/works/${encodeURIComponent(id)}/${value ? "mark_for_later" : "mark_as_read"}`);
+      }
+    } else if (key === "subscribed") {
+      if (Boolean(before.subscribed) !== Boolean(value)) {
+        const token = csrfToken(html);
+        if (value) {
+          const res = await post(`${BASE}/users/${encodeURIComponent(name)}/subscriptions`, [
+            ["subscription[subscribable_id]", id], ["subscription[subscribable_type]", "Work"],
+          ], token);
+          if (res.status >= 400) throw new Error("AO3 didn't subscribe you (HTTP " + res.status + ").");
+        } else {
+          const action = first(html, "ul.work.navigation li.subscribe form");
+          const sub = action && /\/subscriptions\/(\d+)/.exec(action.attrs.action || "");
+          if (!sub) throw new Error("Couldn't find your subscription on AO3.");
+          const res = await post(`${BASE}/users/${encodeURIComponent(name)}/subscriptions/${sub[1]}`, [], token, "delete");
+          if (res.status >= 400) throw new Error("AO3 didn't unsubscribe you (HTTP " + res.status + ").");
+        }
+      }
+    } else if (key === "kudos") {
+      if (!value) throw new Error("AO3 doesn't let you take kudos back.");
+      if (!before.kudos) {
+        const res = await post(`${BASE}/kudos`, [
+          ["kudo[commentable_id]", id], ["kudo[commentable_type]", "Work"],
+        ], csrfToken(html));
+        // 422 means you already left kudos, which is the state we wanted.
+        if (res.status >= 400 && res.status !== 422) throw new Error("AO3 didn't take the kudos (HTTP " + res.status + ").");
+      }
+      return Object.assign({}, before, { kudos: true });
+    } else {
+      throw new Error("Unknown work action: " + key);
+    }
+    const after = workState(await page(workURL), name) || {};
+    return after;
   },
 
   async getChapters(id) {
