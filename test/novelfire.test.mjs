@@ -183,3 +183,20 @@ test("idFromURL reads novel and chapter links", async () => {
   assert.equal(await call("idFromURL", "https://novelfire.net/book/shadow-slave/chapter-12"), "shadow-slave");
   assert.equal(await call("idFromURL", "https://example.com/book/shadow-slave"), null);
 });
+
+test("a 429 is asked again, since the app waits before the next request", async () => {
+  const body = await fixture("book.html");
+  let n = 0;
+  const fetchImpl = async (url) => {
+    n++;
+    if (n === 1) return { status: 429, url, headers: [], text: async () => "Too Many Requests" };
+    return { status: 200, url, headers: [], text: async () => body };
+  };
+  const { call } = await loadSource(dir, { fetchImpl });
+  assert.equal((await call("getWork", "shadow-slave")).title, "Shadow Slave");
+  assert.equal(n, 2);
+
+  const always = async (url) => ({ status: 429, url, headers: [], text: async () => "" });
+  const busy = await loadSource(dir, { fetchImpl: always });
+  await assert.rejects(busy.call("getWork", "shadow-slave"), /slow down/);
+});

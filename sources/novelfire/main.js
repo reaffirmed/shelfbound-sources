@@ -9,8 +9,9 @@
 //
 // The novel's slug is its ID and the chapter's slug ("chapter-12") is the chapter ID.
 // NovelFire's title search can't be combined with its filters, so filters apply when
-// the search box is empty. The site is behind Cloudflare; when it shows a bot check the
-// app asks the person to verify in its browser.
+// the search box is empty. Requests are 1.5 seconds apart, and a long novel's chapter
+// list (100 chapters a page) takes a while to load the first time. The site is behind
+// Cloudflare; when it shows a bot check the app asks the person to verify in its browser.
 
 const BASE = "https://novelfire.net";
 
@@ -86,7 +87,14 @@ function fullFilters() {
 }
 
 async function get(url) {
-  const res = await host.fetch({ url, headers: { Referer: BASE + "/" } });
+  // NovelFire allows roughly 30 pages a minute and answers 429 after that. The app holds
+  // this source's next request back after a 429, so asking again simply waits it out.
+  // That matters for long novels, whose chapter list is many pages.
+  let res;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    res = await host.fetch({ url, headers: { Referer: BASE + "/" } });
+    if (res.status !== 429) break;
+  }
   if (res.status === 404) throw new Error("NovelFire doesn't have that page any more.");
   if (res.status === 429) throw new Error("NovelFire asked us to slow down. Try again in a minute.");
   if (res.status < 200 || res.status >= 300) throw new Error(`NovelFire answered ${res.status}.`);

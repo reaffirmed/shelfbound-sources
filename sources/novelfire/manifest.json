@@ -7,5 +7,6 @@
   "languages": ["en"],
   "contentRating": "mature",
   "domains": ["novelfire.net", "*.novelfire.net"],
+  "rateLimit": { "minIntervalMs": 1500 },
   "capabilities": ["filters", "listings"]
 }
