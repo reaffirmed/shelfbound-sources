@@ -1,0 +1,12 @@
+{
+  "id": "io.github.reaffirmed.novelfire",
+  "name": "NovelFire",
+  "version": "1.0.0",
+  "kind": "text",
+  "format": "novel",
+  "languages": ["en"],
+  "contentRating": "mature",
+  "domains": ["novelfire.net", "*.novelfire.net"],
+  "rateLimit": { "minIntervalMs": 1500 },
+  "capabilities": ["filters", "listings"]
+}
