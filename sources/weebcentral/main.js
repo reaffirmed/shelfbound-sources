@@ -24,6 +24,15 @@ const SORTS = [
 ];
 const TYPES = ["Manga", "Manhwa", "Manhua", "OEL"];
 const STATUSES = ["Ongoing", "Complete", "Hiatus", "Canceled"];
+// The genre list from the site's search page. The adult ones only show when the person
+// allows explicit sources.
+const GENRES = [
+  "Action", "Adventure", "Comedy", "Doujinshi", "Drama", "Fantasy", "Gender Bender", "Harem",
+  "Historical", "Horror", "Isekai", "Josei", "Martial Arts", "Mecha", "Mystery", "Psychological",
+  "Romance", "School Life", "Sci-fi", "Seinen", "Shoujo", "Shoujo Ai", "Shounen", "Shounen Ai",
+  "Slice of Life", "Sports", "Supernatural", "Tragedy", "Yaoi", "Yuri",
+];
+const ADULT_GENRES = ["Adult", "Ecchi", "Hentai", "Mature", "Smut"];
 
 const decode = (s) =>
   String(s ?? "")
@@ -88,11 +97,32 @@ globalThis.source = {
   },
 
   async getFilters() {
-    return [
+    const basic = [
       { id: "sort", label: "Sort by", type: "select", options: SORTS.map(([id, label]) => ({ id, label })), default: ["Best Match"] },
       { id: "type", label: "Type", type: "multi", options: TYPES.map((t) => ({ id: t, label: t })) },
       { id: "status", label: "Status", type: "multi", options: STATUSES.map((s) => ({ id: s, label: s })) },
       { id: "official", label: "Official translations only", type: "toggle" },
+    ];
+    // Apps before 0.4 only show select, multi and toggle.
+    if (!(host.filterTypes || []).includes("tags")) return basic;
+    const genres = adultAllowed() ? GENRES.concat(ADULT_GENRES).sort() : GENRES;
+    return [
+      { ...basic[0], group: "Sort" },
+      {
+        id: "order", label: "Order", type: "select", default: [""], group: "Sort",
+        options: [{ id: "", label: "Usual order" }, { id: "Descending", label: "Descending" }, { id: "Ascending", label: "Ascending" }],
+      },
+      { ...basic[1], group: "Series" },
+      { ...basic[2], group: "Series" },
+      { ...basic[3], group: "Series" },
+      {
+        id: "anime", label: "Anime adaptation", type: "select", default: [""], group: "Series",
+        options: [{ id: "", label: "Any" }, { id: "True", label: "Has an anime" }, { id: "False", label: "No anime" }],
+      },
+      {
+        id: "genres", label: "Genres", type: "tags", group: "Genres", excludable: true, workField: "tags",
+        placeholder: "Start typing a genre", options: genres.map((g) => ({ id: g, label: g })),
+      },
     ];
   },
 
@@ -105,14 +135,16 @@ globalThis.source = {
       ["limit", PAGE_SIZE],
       ["offset", ((page || 1) - 1) * PAGE_SIZE],
       ["sort", sort],
-      ["order", sort === "Alphabet" ? "Ascending" : "Descending"],
+      ["order", (filters.order || [])[0] || (sort === "Alphabet" ? "Ascending" : "Descending")],
       ["official", (filters.official || [])[0] === "true" ? "True" : "Any"],
-      ["anime", "Any"],
+      ["anime", (filters.anime || [])[0] || "Any"],
       ["adult", adultAllowed() ? "Any" : "False"],
       ["display_mode", "Full Display"],
     ];
     for (const t of filters.type || []) params.push(["included_type", t]);
     for (const s of filters.status || []) params.push(["included_status", s]);
+    for (const g of filters.genres || []) params.push(["included_tag", g]);
+    for (const g of filters["genres.exclude"] || []) params.push(["excluded_tag", g]);
     const qs = params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
 
     const html = await get(`${BASE}/search/data?${qs}`);

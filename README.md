@@ -8,8 +8,8 @@ https://reaffirmed.github.io/shelfbound-sources/
 
 | Source | Kind | Rating | Notes |
 | --- | --- | --- | --- |
-| Weeb Central | Manga, manhwa, manhua | Mature | Adult series only show when Settings → Show sources rated up to is Explicit |
-| Archive of Our Own | Fic | Explicit | Needs Settings → Show sources rated up to set to Explicit. One request every 3 seconds. Sign in under Settings → Accounts for restricted works, your bookmarks, Marked for Later, history and subscriptions, and Mark for Later, Subscribe and Kudos on a work's page |
+| Weeb Central | Manga, manhwa, manhua | Mature | Adult series only show when Settings → Show sources rated up to is Explicit. On app 0.4 and later, search by genre (include or leave out), anime adaptation and order |
+| Archive of Our Own | Fic | Explicit | Needs Settings → Show sources rated up to set to Explicit. One request every 3 seconds. Sign in under Settings → Accounts for restricted works, your bookmarks, Marked for Later, history and subscriptions, and Mark for Later, Subscribe and Kudos on a work's page. On app 0.4 and later, the Filters screen matches AO3's own search: fandoms, characters, relationships and tags (with AO3's suggestions, include or leave out), warnings, categories, word, kudos and hits ranges, dates, title, author and 24 languages |
 
 ## How publishing works
 

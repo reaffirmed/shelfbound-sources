@@ -203,6 +203,101 @@ const FILTERS = [
   { id: "nocrossovers", label: "No crossovers", type: "toggle" },
 ];
 
+// The full set, for apps that can show text, number range and tag filters (0.4 and
+// later). Labels of rating, warning, category and language options match how AO3 prints
+// them on a work's page, so tapping one of those there searches by it.
+const RATINGS = [
+  ["10", "General Audiences"], ["11", "Teen And Up Audiences"], ["12", "Mature"], ["13", "Explicit"], ["9", "Not Rated"],
+];
+const WARNINGS = [
+  ["14", "Creator Chose Not To Use Archive Warnings"], ["16", "No Archive Warnings Apply"],
+  ["17", "Graphic Depictions Of Violence"], ["18", "Major Character Death"],
+  ["19", "Rape/Non-Con"], ["20", "Underage Sex"],
+];
+const CATEGORIES = [["116", "F/F"], ["22", "F/M"], ["21", "Gen"], ["23", "M/M"], ["2246", "Multi"], ["24", "Other"]];
+const LANGUAGES = [
+  ["en", "English"], ["es", "Español"], ["fr", "Français"], ["de", "Deutsch"], ["it", "Italiano"],
+  ["ptBR", "Português brasileiro"], ["ptPT", "Português europeu"], ["ru", "Русский"], ["uk", "Українська"],
+  ["pl", "Polski"], ["cs", "Čeština"], ["hu", "Magyar"], ["nl", "Nederlands"], ["sv", "Svenska"], ["fi", "suomi"],
+  ["ca", "Català"], ["tr", "Türkçe"], ["ar", "العربية"], ["zh", "中文-普通话 國語"], ["ja", "日本語"], ["ko", "한국어"],
+  ["th", "ไทย"], ["vi", "Tiếng Việt"], ["id", "Bahasa Indonesia"],
+];
+// Tag fields: filter ID, label, AO3 search field, autocomplete endpoint, work field.
+const TAG_FIELDS = [
+  ["fandoms", "Fandoms", "fandom_names", "fandom", "fandoms"],
+  ["characters", "Characters", "character_names", "character", "characters"],
+  ["relationships", "Relationships", "relationship_names", "relationship", "relationships"],
+  ["freeforms", "Additional tags", "freeform_names", "freeform", "tags"],
+];
+// Number ranges: filter ID, label, AO3 search field, unit.
+const RANGES = [
+  ["words", "Words", "word_count", "words"],
+  ["kudos", "Kudos", "kudos_count", ""],
+  ["hits", "Hits", "hits", ""],
+  ["bookmarks", "Bookmarks", "bookmarks_count", ""],
+  ["comments", "Comments", "comments_count", ""],
+];
+const UPDATED = [
+  ["", "Any time"], ["< 1 week", "Past week"], ["< 1 month", "Past month"],
+  ["< 6 months", "Past 6 months"], ["< 1 year", "Past year"], ["> 1 year", "Over a year ago"],
+];
+const opts = (pairs) => pairs.map(([id, label]) => ({ id, label }));
+
+const FULL_FILTERS = [
+  { ...FILTERS[0], group: "Sort" },
+  {
+    id: "direction", label: "Order", type: "select", default: ["desc"], group: "Sort",
+    options: [{ id: "desc", label: "Highest or newest first" }, { id: "asc", label: "Lowest or oldest first" }],
+  },
+  { ...FILTERS[1], group: "Work" },
+  {
+    id: "rating", label: "Rating", type: "select", default: [""], group: "Work", workField: "rating",
+    options: [{ id: "", label: "Any rating" }].concat(opts(RATINGS)),
+  },
+  {
+    id: "crossover", label: "Crossovers", type: "select", default: [""], group: "Work",
+    options: [{ id: "", label: "Include crossovers" }, { id: "F", label: "No crossovers" }, { id: "T", label: "Only crossovers" }],
+  },
+  { id: "oneshot", label: "Single chapter only", type: "toggle", group: "Work" },
+  {
+    id: "language", label: "Language", type: "select", default: ["en"], group: "Work", workField: "language",
+    options: [{ id: "", label: "Any language" }].concat(opts(LANGUAGES)),
+  },
+  {
+    id: "updated", label: "Updated", type: "select", default: [""], group: "Work",
+    options: opts(UPDATED),
+  },
+  ...TAG_FIELDS.map(([id, label, , , workField]) => ({
+    id, label, type: "tags", group: "Tags", excludable: true, suggests: true, workField,
+    placeholder: "Start typing a " + (id === "freeforms" ? "tag" : label.toLowerCase().replace(/s$/, "")),
+  })),
+  {
+    id: "warnings", label: "Warnings", type: "tags", group: "Tags", excludable: true, workField: "warnings",
+    options: opts(WARNINGS.map(([, name]) => [name, name])),
+  },
+  { id: "categories", label: "Categories", type: "multi", group: "Tags", workField: "categories", options: opts(CATEGORIES) },
+  { id: "othertags", label: "Any other tag", type: "tags", group: "Tags", excludable: true, suggests: true,
+    placeholder: "Any AO3 tag" },
+  ...RANGES.map(([id, label, , unit]) => ({ id, label, type: "range", group: "Stats", placeholder: unit || undefined })),
+  { id: "title", label: "Title", type: "text", group: "More", placeholder: "Words in the title" },
+  { id: "creators", label: "Author", type: "text", group: "More", placeholder: "Pseud or username" },
+];
+
+/** True when the app can show the full set of filters. */
+function fullFilters() {
+  const kinds = host.filterTypes || [];
+  return ["text", "range", "tags"].every((k) => kinds.includes(k));
+}
+
+/** "1000"-"5000" to "1000-5000", "1000"-"" to ">999", ""-"5000" to "<5001". */
+function rangeQuery(pair) {
+  const [min, max] = (pair || []).map((v) => (/^\d+$/.test(String(v || "")) ? Number(v) : null));
+  if (min != null && max != null) return `${Math.min(min, max)}-${Math.max(min, max)}`;
+  if (min != null) return `>${Math.max(min - 1, 0)}`;
+  if (max != null) return `<${max + 1}`;
+  return "";
+}
+
 // Browse lists. AO3 has no trending page, so "Popular this week" is the most kudos
 // among works updated in the last week.
 const LISTINGS = [
@@ -215,19 +310,37 @@ const LISTINGS = [
 function searchURL(query, pageNumber, filters, extra) {
   const f = filters || {};
   const one = (id) => (f[id] && f[id][0]) || "";
+  const all = (id) => (f[id] || []).map((v) => String(v).trim()).filter(Boolean);
+  // Tag names can hold commas only rarely; AO3 takes a comma-separated list.
+  const names = (id) => all(id).join(",");
+
+  const excluded = all("exclude");
+  for (const [id] of TAG_FIELDS) excluded.push(...all(id + ".exclude"));
+  excluded.push(...all("warnings.exclude"), ...all("othertags.exclude"));
+  const warningID = Object.fromEntries(WARNINGS.map(([id, name]) => [name, id]));
+
   const params = [
     ["work_search[query]", query],
+    ["work_search[title]", one("title")],
+    ["work_search[creators]", one("creators")],
     ["work_search[sort_column]", one("sort") || "_score"],
-    ["work_search[sort_direction]", "desc"],
+    ["work_search[sort_direction]", one("direction") === "asc" ? "asc" : "desc"],
     ["work_search[complete]", one("complete")],
     ["work_search[rating_ids]", one("rating")],
     ["work_search[language_id]", f.language ? one("language") : "en"],
-    ["work_search[excluded_tag_names]", (f.exclude || []).join(",")],
-    ["work_search[crossover]", f.nocrossovers && f.nocrossovers.length ? "F" : ""],
-    ["work_search[revised_at]", (extra && extra.revised) || ""],
-    ["page", String(pageNumber || 1)],
-    ["commit", "Search"],
+    ["work_search[crossover]", f.nocrossovers && f.nocrossovers.length ? "F" : one("crossover")],
+    ["work_search[single_chapter]", f.oneshot && f.oneshot.length ? "1" : ""],
+    ["work_search[revised_at]", (extra && extra.revised) || one("updated")],
   ];
+  for (const [id, , field] of TAG_FIELDS) params.push([`work_search[${field}]`, names(id)]);
+  params.push(["work_search[other_tag_names]", names("othertags")]);
+  params.push(["work_search[excluded_tag_names]", [...new Set(excluded)].join(",")]);
+  for (const name of all("warnings")) {
+    if (warningID[name]) params.push(["work_search[archive_warning_ids][]", warningID[name]]);
+  }
+  for (const id of all("categories")) params.push(["work_search[category_ids][]", id]);
+  for (const [id, , field] of RANGES) params.push([`work_search[${field}]`, rangeQuery(f[id])]);
+  params.push(["page", String(pageNumber || 1)], ["commit", "Search"]);
   return `${BASE}/works/search?` + params.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
 }
 
@@ -276,7 +389,26 @@ globalThis.source = {
   },
 
   async getFilters() {
-    return FILTERS;
+    return fullFilters() ? FULL_FILTERS : FILTERS;
+  },
+
+  // Tag names as you type, from AO3's own autocomplete.
+  async suggest(filterID, text) {
+    const field = TAG_FIELDS.find(([id]) => id === filterID);
+    const kind = field ? field[3] : filterID === "othertags" ? "tag" : null;
+    const term = String(text || "").trim();
+    if (!kind || term.length < 2) return [];
+    const res = await host.fetch({
+      url: `${BASE}/autocomplete/${kind}?term=${encodeURIComponent(term)}`,
+      headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+    });
+    if (slowDown(res) || res.status < 200 || res.status >= 300) return [];
+    let list;
+    try { list = JSON.parse(res.body); } catch { return []; }
+    return (Array.isArray(list) ? list : [])
+      .map((t) => (t && (t.name || t.id) ? { id: String(t.name || t.id), label: String(t.name || t.id) } : null))
+      .filter(Boolean)
+      .slice(0, 20);
   },
 
   async getListings() {
