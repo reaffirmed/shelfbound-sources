@@ -1,0 +1,19 @@
+{
+  "id": "io.github.reaffirmed.weebcentral",
+  "name": "Weeb Central",
+  "version": "1.0.0",
+  "kind": "images",
+  "format": "manhwa",
+  "languages": ["en"],
+  "contentRating": "mature",
+  "domains": [
+    "weebcentral.com",
+    "*.compsci88.com",
+    "*.planeptune.us",
+    "*.lastation.us",
+    "*.leanbox.us",
+    "*.lowee.us"
+  ],
+  "rateLimit": { "minIntervalMs": 1500 },
+  "capabilities": ["filters"]
+}
