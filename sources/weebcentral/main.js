@@ -68,7 +68,25 @@ function adultAllowed() {
   return host.settings.get("maxRating") === "explicit";
 }
 
+// Browse lists, read from the same search endpoint with an empty query.
+const LISTINGS = [
+  { id: "latest", title: "Freshly updated", subtitle: "Newest chapters first", sort: "Latest Updates" },
+  { id: "popular", title: "Trending", subtitle: "Most popular right now", sort: "Popularity" },
+  { id: "subscribers", title: "Best of all time", subtitle: "Most subscribers", sort: "Subscribers" },
+  { id: "added", title: "Recently added", subtitle: "New to Weeb Central", sort: "Recently Added" },
+];
+
 globalThis.source = {
+  async getListings() {
+    return LISTINGS.map(({ id, title, subtitle }) => ({ id, title, subtitle }));
+  },
+
+  async getListing(id, page) {
+    const listing = LISTINGS.find((l) => l.id === id);
+    if (!listing) throw new Error("Unknown list: " + id);
+    return globalThis.source.search("", page, { sort: [listing.sort] });
+  },
+
   async getFilters() {
     return [
       { id: "sort", label: "Sort by", type: "select", options: SORTS.map(([id, label]) => ({ id, label })), default: ["Best Match"] },

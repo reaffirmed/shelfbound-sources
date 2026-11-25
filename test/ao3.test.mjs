@@ -116,15 +116,38 @@ test("restricted works and rate limiting give clear errors", async () => {
   await assert.rejects((await loadSource(dir, { fetchImpl: limited })).call("getWork", "3"), /slow down/);
 });
 
-test("the manifest keeps AO3 explicit, slow, and filterable", async () => {
+test("the manifest keeps AO3 explicit, slow, filterable and browsable", async () => {
   const { manifest } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
   assert.equal(manifest.contentRating, "explicit");
   assert.ok(manifest.rateLimit.minIntervalMs >= 3000);
-  assert.deepEqual(manifest.capabilities, ["filters"]);
+  assert.deepEqual(manifest.capabilities, ["filters", "listings"]);
 });
 
 test("links to works and chapters give the work id", async () => {
   const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
   assert.equal(await call("idFromURL", "https://archiveofourown.org/works/1001/chapters/5003"), "1001");
   assert.equal(await call("idFromURL", "https://archiveofourown.org/users/fern"), null);
+});
+
+test("browse lists read AO3's search with a sort and no query", async () => {
+  const fetchImpl = fakeFetch([[/\/works\/search/, { body: await fixture("search.html") }]]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  const listings = await call("getListings");
+  assert.deepEqual(listings.map((l) => l.id), ["updated", "week", "kudos", "new"]);
+  assert.ok(listings.every((l) => l.title && !("sort" in l)));
+
+  const page = await call("getListing", "week", 2);
+  const url = decodeURIComponent(fetchImpl.calls[0]);
+  assert.match(url, /work_search\[query\]=&/);
+  assert.match(url, /work_search\[sort_column\]=kudos_count/);
+  assert.match(url, /work_search\[revised_at\]=< 1 week/);
+  assert.match(url, /work_search\[language_id\]=en/);
+  assert.match(url, /page=2/);
+  assert.ok(page.results.length > 0);
+
+  await call("getListing", "updated", 1);
+  const plain = decodeURIComponent(fetchImpl.calls[1]);
+  assert.match(plain, /sort_column\]=revised_at/);
+  assert.match(plain, /revised_at\]=&/);
+  await assert.rejects(call("getListing", "nope", 1), /Unknown list/);
 });

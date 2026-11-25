@@ -101,6 +101,9 @@ export async function loadSource(sourceDir, { settings = {}, fetchImpl = globalT
   const caps = manifest.capabilities ?? [];
   if (caps.includes("filters") && typeof source.getFilters !== "function") throw new Error("The filters capability needs source.getFilters");
   if (caps.includes("links") && typeof source.resolveLink !== "function") throw new Error("The links capability needs source.resolveLink");
+  if (caps.includes("listings") && (typeof source.getListings !== "function" || typeof source.getListing !== "function")) {
+    throw new Error("The listings capability needs source.getListings and source.getListing");
+  }
   // Round-trip through JSON so results look exactly like what the app receives.
   const call = async (fn, ...args) => {
     if (typeof source[fn] !== "function") throw new Error(`The source has no ${fn} function`);

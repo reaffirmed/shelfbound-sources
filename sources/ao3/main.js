@@ -88,7 +88,7 @@ const FILTERS = [
     ],
   },
   {
-    id: "exclude", label: "Leave out", type: "multi", default: [],
+    id: "exclude", label: "Hide warnings", type: "multi", default: [],
     options: [
       { id: "Major Character Death", label: "Major character death" },
       { id: "Graphic Depictions Of Violence", label: "Graphic violence" },
@@ -100,7 +100,16 @@ const FILTERS = [
   { id: "nocrossovers", label: "No crossovers", type: "toggle" },
 ];
 
-function searchURL(query, pageNumber, filters) {
+// Browse lists. AO3 has no trending page, so "Popular this week" is the most kudos
+// among works updated in the last week.
+const LISTINGS = [
+  { id: "updated", title: "Freshly updated", subtitle: "Newest chapters first", sort: "revised_at" },
+  { id: "week", title: "Popular this week", subtitle: "Most kudos, updated in the last 7 days", sort: "kudos_count", revised: "< 1 week" },
+  { id: "kudos", title: "Best of all time", subtitle: "Most kudos ever", sort: "kudos_count" },
+  { id: "new", title: "Just posted", subtitle: "Brand-new works", sort: "created_at" },
+];
+
+function searchURL(query, pageNumber, filters, extra) {
   const f = filters || {};
   const one = (id) => (f[id] && f[id][0]) || "";
   const params = [
@@ -112,6 +121,7 @@ function searchURL(query, pageNumber, filters) {
     ["work_search[language_id]", f.language ? one("language") : "en"],
     ["work_search[excluded_tag_names]", (f.exclude || []).join(",")],
     ["work_search[crossover]", f.nocrossovers && f.nocrossovers.length ? "F" : ""],
+    ["work_search[revised_at]", (extra && extra.revised) || ""],
     ["page", String(pageNumber || 1)],
     ["commit", "Search"],
   ];
@@ -166,8 +176,18 @@ globalThis.source = {
     return FILTERS;
   },
 
-  async search(query, pageNumber, filters) {
-    const html = await page(searchURL(query, pageNumber, filters));
+  async getListings() {
+    return LISTINGS.map(({ id, title, subtitle }) => ({ id, title, subtitle }));
+  },
+
+  async getListing(id, pageNumber) {
+    const listing = LISTINGS.find((l) => l.id === id);
+    if (!listing) throw new Error("Unknown list: " + id);
+    return globalThis.source.search("", pageNumber, { sort: [listing.sort] }, { revised: listing.revised });
+  },
+
+  async search(query, pageNumber, filters, extra) {
+    const html = await page(searchURL(query, pageNumber, filters, extra));
     const results = host.select(html, "ol.work.index.group > li.work.blurb, ol.index.group > li.blurb.work").map(blurb).filter(Boolean);
     const seen = new Set();
     return {

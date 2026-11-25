@@ -1,12 +1,12 @@
 {
   "id": "io.github.reaffirmed.ao3",
   "name": "Archive of Our Own",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "text",
   "format": "fic",
   "languages": ["en", "multi"],
   "contentRating": "explicit",
   "domains": ["archiveofourown.org"],
   "rateLimit": { "minIntervalMs": 3000 },
-  "capabilities": ["filters"]
+  "capabilities": ["filters", "listings"]
 }
