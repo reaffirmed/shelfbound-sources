@@ -106,3 +106,18 @@ test("filters are well formed", async () => {
   const filters = await call("getFilters");
   assert.deepEqual(filters.map((f) => f.id), ["sort", "type", "status", "official"]);
 });
+
+test("browse lists read the search endpoint sorted, with no query", async () => {
+  const fetchImpl = fakeFetch([[/\/search\/data\?/, await fixture("search.html")]]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  const listings = await call("getListings");
+  assert.deepEqual(listings.map((l) => l.id), ["latest", "popular", "subscribers", "added"]);
+
+  const page = await call("getListing", "popular", 1);
+  const url = decodeURIComponent(fetchImpl.calls[0].url);
+  assert.match(url, /[?&]text=&/);
+  assert.match(url, /sort=Popularity/);
+  assert.match(url, /order=Descending/);
+  assert.equal(page.results.length, 2);
+  await assert.rejects(call("getListing", "nope", 1), /Unknown list/);
+});

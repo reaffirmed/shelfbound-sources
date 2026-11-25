@@ -7,7 +7,7 @@ const KINDS = ["text", "images"];
 const RATINGS = ["safe", "mature", "explicit"];
 const ID_RE = /^[a-z0-9]+(\.[a-z0-9-]+)+$/;
 const FORMATS = { text: ["fic", "novel"], images: ["manga", "manhwa", "manhua", "comic"] };
-const CAPABILITIES = ["filters", "links", "discovery"];
+const CAPABILITIES = ["filters", "links", "discovery", "listings"];
 
 export function generateKeys() {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");

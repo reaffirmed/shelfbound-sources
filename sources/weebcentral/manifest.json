@@ -1,7 +1,7 @@
 {
   "id": "io.github.reaffirmed.weebcentral",
   "name": "Weeb Central",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "images",
   "format": "manhwa",
   "languages": ["en"],
@@ -15,5 +15,5 @@
     "*.lowee.us"
   ],
   "rateLimit": { "minIntervalMs": 1500 },
-  "capabilities": ["filters"]
+  "capabilities": ["filters", "listings"]
 }
