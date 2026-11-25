@@ -7,7 +7,7 @@ const KINDS = ["text", "images"];
 const RATINGS = ["safe", "mature", "explicit"];
 const ID_RE = /^[a-z0-9]+(\.[a-z0-9-]+)+$/;
 const FORMATS = { text: ["fic", "novel"], images: ["manga", "manhwa", "manhua", "comic"] };
-const CAPABILITIES = ["filters", "links", "discovery", "listings"];
+const CAPABILITIES = ["filters", "links", "discovery", "listings", "account"];
 
 export function generateKeys() {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -44,6 +44,14 @@ export function validateManifest(m, where) {
   if (m.capabilities !== undefined) {
     need("capabilities", Array.isArray(m.capabilities) && m.capabilities.every((c) => CAPABILITIES.includes(c)),
       `may only contain ${CAPABILITIES.join(", ")}`);
+  }
+  if ((m.capabilities ?? []).includes("account")) {
+    const login = m.account?.loginURL;
+    let host = null;
+    try { host = new URL(login).hostname; } catch { /* not a URL */ }
+    need("account.loginURL", typeof login === "string" && login.startsWith("https://") && host &&
+      (m.domains ?? []).some((d) => (d.startsWith("*.") ? host === d.slice(2) || host.endsWith("." + d.slice(2)) : host === d)),
+      "must be an https sign-in page on one of the source's domains");
   }
   return errors;
 }

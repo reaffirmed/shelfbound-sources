@@ -120,7 +120,8 @@ test("the manifest keeps AO3 explicit, slow, filterable and browsable", async ()
   const { manifest } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
   assert.equal(manifest.contentRating, "explicit");
   assert.ok(manifest.rateLimit.minIntervalMs >= 3000);
-  assert.deepEqual(manifest.capabilities, ["filters", "listings"]);
+  assert.deepEqual(manifest.capabilities, ["filters", "listings", "account"]);
+  assert.equal(manifest.account.loginURL, "https://archiveofourown.org/users/login");
 });
 
 test("links to works and chapters give the work id", async () => {
@@ -150,4 +151,137 @@ test("browse lists read AO3's search with a sort and no query", async () => {
   assert.match(plain, /sort_column\]=revised_at/);
   assert.match(plain, /revised_at\]=&/);
   await assert.rejects(call("getListing", "nope", 1), /Unknown list/);
+});
+
+// Signed in. The app passes the username as the "account" setting and sends AO3's
+// session cookie itself, so these pages are what AO3 shows a signed-in reader.
+
+const signedIn = { settings: { account: "fern_reads", maxRating: "explicit" } };
+
+test("getAccount reads the username from AO3's header, and null when logged out", async () => {
+  const inside = fakeFetch([[/archiveofourown\.org\/$/, { body: await fixture("home-signed-in.html") }]]);
+  assert.deepEqual(await (await loadSource(dir, { fetchImpl: inside })).call("getAccount"),
+    { username: "fern_reads", url: "https://archiveofourown.org/users/fern_reads" });
+  const outside = fakeFetch([[/archiveofourown\.org\/$/, { body: await fixture("home-signed-out.html") }]]);
+  assert.equal(await (await loadSource(dir, { fetchImpl: outside })).call("getAccount"), null);
+});
+
+test("account lists say which ones can be imported", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]), ...signedIn });
+  const lists = await call("getAccountLists");
+  assert.deepEqual(lists.map((l) => [l.id, l.importable]), [["bookmarks", true], ["later", true], ["history", false], ["subscriptions", true]]);
+});
+
+test("bookmarks read the person's bookmark blurbs and skip deleted works", async () => {
+  const fetchImpl = fakeFetch([[/\/users\/fern_reads\/bookmarks\?page=1$/, { body: await fixture("bookmarks.html") }]]);
+  const { call } = await loadSource(dir, { fetchImpl, ...signedIn });
+  const page = await call("getAccountList", "bookmarks", 1);
+  assert.deepEqual(page.results.map((r) => r.id), ["1001", "2002"]);
+  assert.equal(page.results[1].title, "Salt & Static");
+  assert.deepEqual(page.results[0].fandoms, ["Hollow Tide"]);
+  assert.equal(page.results[0].wordCount, 12345);
+  assert.equal(page.hasMore, true);
+});
+
+test("Marked for Later and subscriptions", async () => {
+  const fetchImpl = fakeFetch([
+    [/readings\?show=to-read&page=2$/, { body: await fixture("later.html") }],
+    [/subscriptions\?type=works&page=1$/, { body: await fixture("subscriptions.html") }],
+  ]);
+  const { call } = await loadSource(dir, { fetchImpl, ...signedIn });
+  const later = await call("getAccountList", "later", 2);
+  assert.deepEqual(later.results.map((r) => r.title), ["Lantern Hours"]);
+  assert.equal(later.hasMore, false);
+  const subs = await call("getAccountList", "subscriptions", 1);
+  assert.deepEqual(subs.results, [{ id: "1001", title: "Tea at the Edge of the World", authors: ["fern"], format: "fic" }]);
+});
+
+test("account lists need a session", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
+  await assert.rejects(call("getAccountList", "bookmarks", 1), /Sign in to AO3/);
+  // Cookie expired: AO3 answers with the logged-out header.
+  const expired = fakeFetch([[/bookmarks/, { body: await fixture("home-signed-out.html") }]]);
+  await assert.rejects((await loadSource(dir, { fetchImpl: expired, ...signedIn })).call("getAccountList", "bookmarks", 1), /signed you out/);
+});
+
+test("a signed-in work page carries Marked for Later, subscription and kudos state", async () => {
+  const fresh = fakeFetch([[/works\/1001\?/, { body: await fixture("work-signed-in.html") }]]);
+  const work = await (await loadSource(dir, { fetchImpl: fresh, ...signedIn })).call("getWork", "1001");
+  assert.deepEqual(work.account, { markedForLater: false, subscribed: false });
+  const done = fakeFetch([[/works\/1001\?/, { body: await fixture("work-signed-in-done.html") }]]);
+  const after = await (await loadSource(dir, { fetchImpl: done, ...signedIn })).call("getWork", "1001");
+  assert.deepEqual(after.account, { markedForLater: true, subscribed: true, kudos: true });
+  // Logged out there's no account state at all.
+  const anon = await (await loadSource(dir, { fetchImpl: fakeFetch([[/works\/1001\?/, { body: await fixture("work.html") }]]) })).call("getWork", "1001");
+  assert.equal(anon.account, undefined);
+});
+
+test("restricted works point to signing in", async () => {
+  const restricted = fakeFetch([[/works\/2/, { url: "https://archiveofourown.org/users/login?restricted=true", body: "<html>Log in</html>" }]]);
+  await assert.rejects((await loadSource(dir, { fetchImpl: restricted })).call("getWork", "2"), /Sign in to AO3 in Settings > Accounts/);
+  await assert.rejects((await loadSource(dir, { fetchImpl: restricted, ...signedIn })).call("getWork", "2"), /signed you out/);
+});
+
+function workSequence(pages) {
+  // Answers the work page from `pages` in order, so the state can change after an action.
+  let n = 0;
+  return async () => ({ body: await fixture(pages[Math.min(n++, pages.length - 1)]) });
+}
+
+test("Mark for Later opens AO3's mark link and reads the state back", async () => {
+  const fetchImpl = fakeFetch([
+    [/works\/1001\/mark_for_later$/, { body: "<html></html>" }],
+    [/works\/1001\?/, workSequence(["work-signed-in.html", "work-signed-in-done.html"])],
+  ]);
+  const { call } = await loadSource(dir, { fetchImpl, ...signedIn });
+  const state = await call("setWorkState", "1001", "markedForLater", true);
+  assert.equal(state.markedForLater, true);
+  assert.ok(fetchImpl.calls.some((u) => u.endsWith("/works/1001/mark_for_later")));
+});
+
+test("nothing is sent when the work is already in the wanted state", async () => {
+  const fetchImpl = fakeFetch([[/works\/1001\?/, { body: await fixture("work-signed-in-done.html") }]]);
+  const { call } = await loadSource(dir, { fetchImpl, ...signedIn });
+  await call("setWorkState", "1001", "markedForLater", true);
+  await call("setWorkState", "1001", "kudos", true);
+  assert.ok(fetchImpl.calls.every((u) => /works\/1001\?/.test(u)));
+});
+
+test("kudos and subscribe post AO3's forms with the page's token", async () => {
+  const posts = [];
+  const record = (status) => async (url, init) => { posts.push({ url, body: init.body, headers: init.headers }); return { status, body: "{}" }; };
+  const fetchImpl = fakeFetch([
+    [/\/kudos$/, record(201)],
+    [/\/users\/fern_reads\/subscriptions$/, record(200)],
+    [/works\/1001\?/, workSequence(["work-signed-in.html", "work-signed-in.html", "work-signed-in-done.html"])],
+  ]);
+  const { call } = await loadSource(dir, { fetchImpl, ...signedIn });
+  assert.equal((await call("setWorkState", "1001", "kudos", true)).kudos, true);
+  const params = new URLSearchParams(posts[0].body);
+  assert.equal(params.get("authenticity_token"), "tok-work-456");
+  assert.equal(params.get("kudo[commentable_id]"), "1001");
+  assert.equal(params.get("kudo[commentable_type]"), "Work");
+  assert.equal(posts[0].headers["X-CSRF-Token"], "tok-work-456");
+
+  assert.equal((await call("setWorkState", "1001", "subscribed", true)).subscribed, true);
+  const sub = new URLSearchParams(posts[1].body);
+  assert.equal(sub.get("subscription[subscribable_id]"), "1001");
+  assert.equal(sub.get("_method"), null);
+});
+
+test("unsubscribing deletes the subscription named on the work page", async () => {
+  const posts = [];
+  const fetchImpl = fakeFetch([
+    [/\/subscriptions\/555$/, async (url, init) => { posts.push(init.body); return { status: 200, body: "{}" }; }],
+    [/works\/1001\?/, workSequence(["work-signed-in-done.html", "work-signed-in.html"])],
+  ]);
+  const { call } = await loadSource(dir, { fetchImpl, ...signedIn });
+  assert.equal((await call("setWorkState", "1001", "subscribed", false)).subscribed, false);
+  assert.equal(new URLSearchParams(posts[0]).get("_method"), "delete");
+});
+
+test("kudos can't be taken back, and actions need a session", async () => {
+  const fetchImpl = fakeFetch([[/works\/1001\?/, { body: await fixture("work-signed-in-done.html") }]]);
+  await assert.rejects((await loadSource(dir, { fetchImpl, ...signedIn })).call("setWorkState", "1001", "kudos", false), /take kudos back/);
+  await assert.rejects((await loadSource(dir, { fetchImpl })).call("setWorkState", "1001", "kudos", true), /Sign in to AO3/);
 });

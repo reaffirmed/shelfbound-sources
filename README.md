@@ -9,7 +9,7 @@ https://reaffirmed.github.io/shelfbound-sources/
 | Source | Kind | Rating | Notes |
 | --- | --- | --- | --- |
 | Weeb Central | Manga, manhwa, manhua | Mature | Adult series only show when Settings → Show sources rated up to is Explicit |
-| Archive of Our Own | Fic | Explicit | Needs Settings → Show sources rated up to set to Explicit. Logged out only, one request every 3 seconds |
+| Archive of Our Own | Fic | Explicit | Needs Settings → Show sources rated up to set to Explicit. One request every 3 seconds. Sign in under Settings → Accounts for restricted works, your bookmarks, Marked for Later, history and subscriptions, and Mark for Later, Subscribe and Kudos on a work's page |
 
 ## How publishing works
 
