@@ -28,11 +28,80 @@ function fakeFetch(routes) {
   return impl;
 }
 
-test("filters describe sort, status, rating, language and exclusions", async () => {
-  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
+test("apps before 0.4 get only the filters they can show", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]), filterTypes: null });
   const filters = await call("getFilters");
   assert.deepEqual(filters.map((f) => f.id), ["sort", "complete", "rating", "language", "exclude", "nocrossovers"]);
   assert.ok(filters.every((f) => ["select", "multi", "toggle"].includes(f.type)));
+});
+
+test("newer apps get AO3's full search", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
+  const filters = await call("getFilters");
+  const ids = filters.map((f) => f.id);
+  for (const id of ["fandoms", "characters", "relationships", "freeforms", "warnings", "categories", "othertags",
+    "words", "kudos", "hits", "updated", "crossover", "direction", "title", "creators"]) {
+    assert.ok(ids.includes(id), id);
+  }
+  assert.equal(new Set(ids).size, ids.length);
+  const byID = Object.fromEntries(filters.map((f) => [f.id, f]));
+  assert.equal(byID.fandoms.type, "tags");
+  assert.equal(byID.fandoms.workField, "fandoms");
+  assert.equal(byID.freeforms.workField, "tags");
+  assert.ok(byID.fandoms.excludable && byID.fandoms.suggests);
+  assert.equal(byID.words.type, "range");
+  // Labels match the work page, so a tapped tag finds its option.
+  assert.ok(byID.rating.options.some((o) => o.label === "Teen And Up Audiences"));
+  assert.ok(byID.categories.options.some((o) => o.label === "F/M"));
+  assert.ok(byID.language.options.length > 20);
+});
+
+test("full search maps every filter to AO3's fields", async () => {
+  const fetchImpl = fakeFetch([[/\/works\/search/, { body: await fixture("search.html") }]]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  await call("search", "", 1, {
+    sort: ["word_count"], direction: ["asc"], crossover: ["T"], oneshot: ["true"], updated: ["< 1 month"],
+    fandoms: ["Hollow Tide", "Other Show"], "fandoms.exclude": ["Bad Show"],
+    characters: ["Mara"], relationships: ["Mara/Ilse"], freeforms: ["Slow Burn"], "freeforms.exclude": ["Angst"],
+    warnings: ["No Archive Warnings Apply"], "warnings.exclude": ["Major Character Death"],
+    categories: ["116", "21"], othertags: ["Tea"],
+    words: ["1000", "5000"], kudos: ["100", ""], hits: ["", "999"], bookmarks: ["", ""],
+    title: ["edge"], creators: ["fern"],
+  });
+  const url = decodeURIComponent(fetchImpl.calls[0]);
+  assert.match(url, /work_search\[query\]=&/);
+  assert.match(url, /work_search\[sort_direction\]=asc/);
+  assert.match(url, /work_search\[crossover\]=T/);
+  assert.match(url, /work_search\[single_chapter\]=1/);
+  assert.match(url, /work_search\[revised_at\]=< 1 month/);
+  assert.match(url, /work_search\[fandom_names\]=Hollow Tide,Other Show/);
+  assert.match(url, /work_search\[character_names\]=Mara&/);
+  assert.match(url, /work_search\[relationship_names\]=Mara\/Ilse/);
+  assert.match(url, /work_search\[freeform_names\]=Slow Burn/);
+  assert.match(url, /work_search\[other_tag_names\]=Tea/);
+  assert.match(url, /work_search\[excluded_tag_names\]=Bad Show,Angst,Major Character Death/);
+  assert.match(url, /work_search\[archive_warning_ids\]\[\]=16/);
+  assert.match(url, /work_search\[category_ids\]\[\]=116&work_search\[category_ids\]\[\]=21/);
+  assert.match(url, /work_search\[word_count\]=1000-5000/);
+  assert.match(url, /work_search\[kudos_count\]=>99/);
+  assert.match(url, /work_search\[hits\]=<1000/);
+  assert.match(url, /work_search\[bookmarks_count\]=&/);
+  assert.match(url, /work_search\[title\]=edge/);
+  assert.match(url, /work_search\[creators\]=fern/);
+});
+
+test("tag suggestions come from AO3's autocomplete", async () => {
+  const fetchImpl = fakeFetch([
+    [/\/autocomplete\/fandom\?term=hol/, { body: JSON.stringify([{ id: "Hollow Tide", name: "Hollow Tide" }, { id: "Holby City", name: "Holby City" }]) }],
+    [/\/autocomplete\/tag\?/, { status: 500 }],
+  ]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  assert.deepEqual(await call("suggest", "fandoms", "hol"), [
+    { id: "Hollow Tide", label: "Hollow Tide" }, { id: "Holby City", label: "Holby City" },
+  ]);
+  assert.deepEqual(await call("suggest", "othertags", "tea"), []);
+  assert.deepEqual(await call("suggest", "fandoms", "h"), []);
+  assert.deepEqual(await call("suggest", "warnings", "maj"), []);
 });
 
 test("search builds the query from filters and reads blurbs", async () => {

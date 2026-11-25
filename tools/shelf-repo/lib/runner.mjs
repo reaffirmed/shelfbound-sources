@@ -25,7 +25,11 @@ export class BrowserVerificationNeeded extends Error {
   }
 }
 
-export async function loadSource(sourceDir, { settings = {}, fetchImpl = globalThis.fetch, log = console.error, throttle } = {}) {
+// Filter kinds the current app shows. Pass `filterTypes: null` to act like an app
+// before 0.4, which had only select, multi and toggle and no host.filterTypes.
+export const FILTER_TYPES = Object.freeze(["select", "multi", "toggle", "text", "range", "tags"]);
+
+export async function loadSource(sourceDir, { settings = {}, fetchImpl = globalThis.fetch, log = console.error, throttle, filterTypes = FILTER_TYPES } = {}) {
   const manifest = JSON.parse(await readFile(path.join(sourceDir, "manifest.json"), "utf8"));
   const script = await readFile(path.join(sourceDir, "main.js"), "utf8");
   const allowed = (url) => {
@@ -89,6 +93,7 @@ export async function loadSource(sourceDir, { settings = {}, fetchImpl = globalT
     },
     log: (...p) => log(`[${manifest.id}]`, ...p),
     settings: Object.freeze({ get: (k) => settings[k] ?? null }),
+    ...(filterTypes ? { filterTypes: Object.freeze([...filterTypes]) } : {}),
   });
   try { cheerio = await import("cheerio"); } catch { /* optional */ }
 

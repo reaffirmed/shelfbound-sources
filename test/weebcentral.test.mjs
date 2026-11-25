@@ -104,7 +104,7 @@ test("idFromURL reads series links and ignores other sites", async () => {
 test("filters are well formed", async () => {
   const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
   const filters = await call("getFilters");
-  assert.deepEqual(filters.map((f) => f.id), ["sort", "type", "status", "official"]);
+  assert.deepEqual(filters.map((f) => f.id), ["sort", "order", "type", "status", "official", "anime", "genres"]);
 });
 
 test("browse lists read the search endpoint sorted, with no query", async () => {
@@ -120,4 +120,29 @@ test("browse lists read the search endpoint sorted, with no query", async () => 
   assert.match(url, /order=Descending/);
   assert.equal(page.results.length, 2);
   await assert.rejects(call("getListing", "nope", 1), /Unknown list/);
+});
+
+test("newer apps get genres, order and anime filters, mapped to the site's search", async () => {
+  const fetchImpl = fakeFetch([[/\/search\/data/, await fixture("search.html")]]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  const filters = await call("getFilters");
+  const genres = filters.find((f) => f.id === "genres");
+  assert.equal(genres.type, "tags");
+  assert.equal(genres.workField, "tags");
+  assert.ok(genres.excludable);
+  assert.ok(genres.options.some((o) => o.id === "Action"));
+  assert.ok(!genres.options.some((o) => o.id === "Hentai"), "adult genres stay hidden by default");
+
+  await call("search", "", 1, { genres: ["Action", "Fantasy"], "genres.exclude": ["Horror"], order: ["Ascending"], anime: ["True"] });
+  const url = decodeURIComponent(fetchImpl.calls[0].url);
+  assert.match(url, /included_tag=Action&included_tag=Fantasy/);
+  assert.match(url, /excluded_tag=Horror/);
+  assert.match(url, /order=Ascending/);
+  assert.match(url, /anime=True/);
+});
+
+test("apps before 0.4 keep the four simple filters", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]), filterTypes: null });
+  const filters = await call("getFilters");
+  assert.deepEqual(filters.map((f) => f.id), ["sort", "type", "status", "official"]);
 });
