@@ -10,6 +10,8 @@ https://reaffirmed.github.io/shelfbound-sources/
 | --- | --- | --- | --- |
 | Weeb Central | Manga, manhwa, manhua | Mature | Adult series only show when Settings → Show sources rated up to is Explicit. On app 0.4 and later, search by genre (include or leave out), anime adaptation and order |
 | Archive of Our Own | Fic | Explicit | Needs Settings → Show sources rated up to set to Explicit. One request every 3 seconds. Sign in under Settings → Accounts for restricted works, your bookmarks, Marked for Later, history and subscriptions, and Mark for Later, Subscribe and Kudos on a work's page. On app 0.4 and later, the Filters screen matches AO3's own search: fandoms, characters, relationships and tags (with AO3's suggestions, include or leave out), warnings, categories, word, kudos and hits ranges, dates, title, author and 24 languages |
+| NovelFire | Web and light novels | Mature | Text reader. Title search, or leave the search box empty to use the filters: genres (include or leave out), tags with NovelFire's suggestions, status, original language, chapter count, reader rating and sort. Adult genres only show when Settings → Show sources rated up to is Explicit. A long novel's chapter list loads 100 chapters a page, so the first open takes a while |
+| Toonily | Manhwa | Mature | Webtoon reader. Search by genre, status, writer, artist and sort. Most of Toonily's catalog is adult: it only shows in search and Discover when Settings → Show sources rated up to is Explicit |
 
 ## How publishing works
 
@@ -47,3 +49,20 @@ The source reads the HTML fragments the site's own front end loads:
 (`*.planeptune.us`, `*.lastation.us`, `*.lowee.us`, `*.leanbox.us`, `*.compsci88.com`). If chapters
 stop loading because a new mirror appears, add its domain to `sources/weebcentral/manifest.json`
 and bump the version.
+
+## NovelFire notes
+
+Plain server-rendered pages: `/search?keyword=` for title search, `/search-adv` for the
+filters (NovelFire can't combine the two), `/book/<slug>`, `/book/<slug>/chapters?page=N`
+and `/book/<slug>/chapter-<n>`. The site answers 429 after roughly 30 pages a minute, so
+the source spaces requests 1.5 seconds apart and asks again after a 429 (the app waits
+before the retry). Tags are looked up by name through `/ajax/getTags`, the same lookup the
+site's search form uses.
+
+## Toonily notes
+
+WordPress with a customised Madara theme. Search is `/search/?s=…&genre[]=…&status[]=…&m_orderby=…`
+(`/search/page/N/?…` after page 1), series pages list every chapter inline, and chapter
+pages hold the images in `.reading-content`. Covers and pages come from `*.tnlycdn.com`.
+Adult series are hidden from search and lists unless the request carries the cookie
+`toonily-mature=1`, which the source only sends when the person allows explicit sources.
