@@ -38,6 +38,30 @@ const GENRES = [
 ];
 const ADULT_GENRES = new Set(["mature", "adult", "smut", "hentai", "ecchi"]);
 
+// The genre list read from the site's own search form, so genres the list above misses
+// (like Harem) can still be picked. Falls back to the list above if the form can't be read.
+let siteGenres = null;
+
+async function genreList() {
+  if (siteGenres) return siteGenres;
+  try {
+    const html = await get(`${BASE}/?s=&post_type=wp-manga`);
+    const found = [];
+    for (const box of host.select(html, ".checkbox")) {
+      const input = host.select(box.outerHTML, "input")[0];
+      if (!input || input.attrs.name !== "genre[]" || !input.attrs.value) continue;
+      const label = decode(box.text);
+      if (label && !found.some(([slug]) => slug === input.attrs.value)) found.push([input.attrs.value, label]);
+    }
+    if (found.length >= 10) siteGenres = found;
+  } catch (_) {
+    // Use the built-in list.
+  }
+  return siteGenres || GENRES;
+}
+
+const slugify = (name) => String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
 const LISTINGS = [
   { id: "latest", title: "Freshly updated", subtitle: "Newest chapters first", sort: "latest" },
   { id: "trending", title: "Trending", subtitle: "Popular right now", sort: "trending" },
@@ -118,10 +142,12 @@ function card(item) {
 function searchURL(query, pageNumber, filters) {
   const f = filters || {};
   const one = (id) => (f[id] && f[id][0]) || "";
-  const genreSlug = Object.fromEntries(GENRES.map(([slug, name]) => [name.toLowerCase(), slug]));
+  const known = (siteGenres || []).concat(GENRES);
+  const genreSlug = Object.fromEntries(known.map(([slug, name]) => [name.toLowerCase(), slug]));
   const params = [["s", String(query ?? "").trim()], ["post_type", "wp-manga"]];
   for (const g of f.genres || []) {
-    const slug = genreSlug[String(g).toLowerCase()] || (GENRES.some(([s]) => s === g) ? g : null);
+    // A typed name that isn't in the list goes as the site would spell its slug.
+    const slug = genreSlug[String(g).toLowerCase()] || (known.some(([s]) => s === g) ? g : slugify(g));
     if (slug) params.push(["genre[]", slug]);
   }
   if ((f.genres || []).length) params.push(["op", one("genreMatch") === "any" ? "" : "1"]);
@@ -159,16 +185,18 @@ globalThis.source = {
   async getFilters() {
     const sort = { id: "sort", label: "Sort by", type: "select", default: [""], options: opts(SORTS) };
     const status = { id: "status", label: "Status", type: "multi", options: opts(STATUSES) };
+    const all = await genreList();
+    const genres = all.filter(([slug, name]) => adultAllowed() || GENRES.some(([s]) => s === slug) || !ADULT_GENRES.has(slug) && !ADULT_GENRES.has(name.toLowerCase()));
     if (!fullFilters()) {
       // Apps before 0.4 only show select, multi and toggle.
-      return [sort, status, { id: "genres", label: "Genres", type: "multi", options: opts(GENRES) }];
+      return [sort, status, { id: "genres", label: "Genres", type: "multi", options: opts(genres) }];
     }
     const filters = [
       { ...sort, group: "Sort" },
       { ...status, group: "Series" },
       {
         id: "genres", label: "Genres", type: "tags", group: "Genres", workField: "tags",
-        placeholder: "Start typing a genre", options: GENRES.map(([, name]) => ({ id: name, label: name })),
+        placeholder: "Start typing a genre", options: genres.map(([, name]) => ({ id: name, label: name })),
       },
       {
         id: "genreMatch", label: "Genres to match", type: "select", default: ["all"], group: "Genres",

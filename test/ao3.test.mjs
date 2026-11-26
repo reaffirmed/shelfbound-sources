@@ -361,3 +361,30 @@ test("kudos can't be taken back, and actions need a session", async () => {
   await assert.rejects((await loadSource(dir, { fetchImpl, ...signedIn })).call("setWorkState", "1001", "kudos", false), /take kudos back/);
   await assert.rejects((await loadSource(dir, { fetchImpl })).call("setWorkState", "1001", "kudos", true), /Sign in to AO3/);
 });
+
+test("apps with date filters get updated and posted date ranges", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
+  const filters = await call("getFilters");
+  const byID = Object.fromEntries(filters.map((f) => [f.id, f]));
+  assert.equal(byID.updatedBetween.type, "date");
+  assert.equal(byID.postedBetween.type, "date");
+
+  const older = await loadSource(dir, { fetchImpl: fakeFetch([]), filterTypes: ["select", "multi", "toggle", "text", "range", "tags"] });
+  const without = (await older.call("getFilters")).map((f) => f.id);
+  assert.ok(without.includes("fandoms"));
+  assert.ok(!without.includes("updatedBetween") && !without.includes("postedBetween"));
+});
+
+test("date ranges go into AO3's search box, with open ends", async () => {
+  const fetchImpl = fakeFetch([[/\/works\/search/, { body: await fixture("search.html") }]]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  await call("search", "coffee shop", 1, { updatedBetween: ["2024-01-01", "2024-06-30"], postedBetween: ["", "2020-12-31"] });
+  await call("search", "", 1, { updatedBetween: ["2024-06-30", "2024-01-01"], postedBetween: ["", ""] });
+  await call("search", "", 1, { updatedBetween: ["not a date", "2024-01-01"] });
+  const urls = fetchImpl.calls.map((u) => new URL(u).searchParams.get("work_search[query]"));
+  assert.deepEqual(urls, [
+    "coffee shop revised_at:[2024-01-01 TO 2024-06-30] created_at:[* TO 2020-12-31]",
+    "revised_at:[2024-01-01 TO 2024-06-30]",
+    "revised_at:[* TO 2024-01-01]",
+  ]);
+});
