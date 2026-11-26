@@ -131,7 +131,7 @@ test("newer apps get genres, order and anime filters, mapped to the site's searc
   assert.equal(genres.workField, "tags");
   assert.ok(genres.excludable);
   assert.ok(genres.options.some((o) => o.id === "Action"));
-  assert.ok(!genres.options.some((o) => o.id === "Hentai"), "adult genres stay hidden by default");
+  assert.ok(!genres.options.some((o) => o.id === "Adult"), "adult genres stay hidden by default");
 
   await call("search", "", 1, { genres: ["Action", "Fantasy"], "genres.exclude": ["Horror"], order: ["Ascending"], anime: ["True"] });
   const url = decodeURIComponent(fetchImpl.calls[0].url);
