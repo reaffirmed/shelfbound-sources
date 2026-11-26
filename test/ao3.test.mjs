@@ -235,6 +235,13 @@ test("getAccount reads the username from AO3's header, and null when logged out"
   assert.equal(await (await loadSource(dir, { fetchImpl: outside })).call("getAccount"), null);
 });
 
+test("getAccount throws instead of saying signed out when AO3 is down or sends something odd", async () => {
+  const down = fakeFetch([[/archiveofourown\.org\/$/, { status: 503, body: "<html><body>Down for maintenance</body></html>" }]]);
+  await assert.rejects((await loadSource(dir, { fetchImpl: down })).call("getAccount"), /503/);
+  const odd = fakeFetch([[/archiveofourown\.org\/$/, { body: "<html><body><p>Something else</p></body></html>" }]]);
+  await assert.rejects((await loadSource(dir, { fetchImpl: odd })).call("getAccount"), /couldn't read/);
+});
+
 test("account lists say which ones can be imported", async () => {
   const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]), ...signedIn });
   const lists = await call("getAccountLists");

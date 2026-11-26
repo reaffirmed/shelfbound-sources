@@ -496,11 +496,17 @@ globalThis.source = {
   },
 
   // Signed-in account, from AO3's header. Null when the session cookie is missing or expired.
+  // Null only when AO3 answered normally and shows the Log In link. An outage, maintenance
+  // or error page throws instead, so the app doesn't forget a session that still works.
   async getAccount() {
     const res = await host.fetch(`${BASE}/`);
     if (slowDown(res)) throw new Error("AO3 asked us to slow down. Try again in a few minutes.");
+    if (res.status < 200 || res.status >= 300) throw new Error("AO3 answered " + res.status + ". Try again later.");
     const name = signedInAs(res.body);
-    return name ? { username: name, url: `${BASE}/users/${encodeURIComponent(name)}` } : null;
+    if (name) return { username: name, url: `${BASE}/users/${encodeURIComponent(name)}` };
+    const loginLink = host.select(res.body, "a").some((a) => /\/users\/login\b/.test(a.attrs.href || ""));
+    if (!loginLink) throw new Error("AO3 sent a page Shelfbound couldn't read. Try again later.");
+    return null;
   },
 
   async getAccountLists() {
