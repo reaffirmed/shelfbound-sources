@@ -134,7 +134,7 @@ test("newer apps get genres, order and anime filters, mapped to the site's searc
   assert.ok(!genres.options.some((o) => o.id === "Adult"), "adult genres stay hidden by default");
 
   await call("search", "", 1, { genres: ["Action", "Fantasy"], "genres.exclude": ["Horror"], order: ["Ascending"], anime: ["True"] });
-  const url = decodeURIComponent(fetchImpl.calls[0].url);
+  const url = decodeURIComponent(fetchImpl.calls.at(-1).url);
   assert.match(url, /included_tag=Action&included_tag=Fantasy/);
   assert.match(url, /excluded_tag=Horror/);
   assert.match(url, /order=Ascending/);
@@ -145,4 +145,20 @@ test("apps before 0.4 keep the four simple filters", async () => {
   const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]), filterTypes: null });
   const filters = await call("getFilters");
   assert.deepEqual(filters.map((f) => f.id), ["sort", "type", "status", "official"]);
+});
+
+test("genres come from the site's search page, adult ones only when explicit sources are allowed", async () => {
+  const names = ["Action", "Adult", "Adventure", "Comedy", "Drama", "Fantasy", "Horror", "Martial Arts", "Mystery", "Romance", "Space Opera", "Other"];
+  const page = `<form id="advanced-search-form"></form>` + names.map((n) =>
+    `<label class="fieldset-label"><input type="checkbox" form="advanced-search-form" class="checkbox" id="tag-${n}" value="0">` +
+    `<input type="hidden" form="advanced-search-form" id="tag-${n}-value" value="${n}"><span>${n}</span></label>`).join("");
+  const route = [[/\/search$/, page]];
+  const genres = async (settings) => {
+    const { call } = await loadSource(dir, { fetchImpl: fakeFetch(route), settings });
+    return (await call("getFilters")).find((f) => f.id === "genres").options.map((o) => o.id);
+  };
+  const usual = await genres({});
+  assert.ok(usual.includes("Space Opera"), "genres the built-in list lacks come from the site");
+  assert.ok(!usual.includes("Adult"));
+  assert.ok((await genres({ maxRating: "explicit" })).includes("Adult"));
 });

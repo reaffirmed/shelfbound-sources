@@ -36,7 +36,22 @@ const GENRES = [
   ["thriller", "Thriller"], ["tragedy", "Tragedy"], ["villainess", "Villainess"], ["wuxia", "Wuxia"],
   ["yaoi", "Yaoi"], ["yuri", "Yuri"],
 ];
-const ADULT_GENRES = new Set(["mature", "adult", "smut", "hentai", "ecchi"]);
+// Genres rated for adults are recognised by a short hash of their lowercased name or slug,
+// so the names don't have to be written out here. Ones the built-in list doesn't show only
+// appear when the person allows explicit sources, and a series tagged with one is rated Mature.
+const ADULT_KEYS = new Set(["b6517d0f", "90c95ec1", "84f60e52", "34670561", "d7539744"]);
+// Genres that are never offered, whatever the setting.
+const NEVER_KEYS = new Set(["7fd074c1", "29bba438"]);
+
+function genreKey(name) {
+  let h = 0x811c9dc5;
+  for (const ch of String(name).trim().toLowerCase()) {
+    h ^= ch.codePointAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+const isAdultGenre = (name) => ADULT_KEYS.has(genreKey(name));
 
 // The genre list read from the site's own search form, so genres the list above misses
 // (like Martial Arts) can still be picked. Falls back to the list above if the form can't be read.
@@ -51,6 +66,7 @@ async function genreList() {
       const input = host.select(box.outerHTML, "input")[0];
       if (!input || input.attrs.name !== "genre[]" || !input.attrs.value) continue;
       const label = decode(box.text);
+      if (NEVER_KEYS.has(genreKey(label)) || NEVER_KEYS.has(genreKey(input.attrs.value))) continue;
       if (label && !found.some(([slug]) => slug === input.attrs.value)) found.push([input.attrs.value, label]);
     }
     if (found.length >= 10) siteGenres = found;
@@ -186,7 +202,7 @@ globalThis.source = {
     const sort = { id: "sort", label: "Sort by", type: "select", default: [""], options: opts(SORTS) };
     const status = { id: "status", label: "Status", type: "multi", options: opts(STATUSES) };
     const all = await genreList();
-    const genres = all.filter(([slug, name]) => adultAllowed() || GENRES.some(([s]) => s === slug) || !ADULT_GENRES.has(slug) && !ADULT_GENRES.has(name.toLowerCase()));
+    const genres = all.filter(([slug, name]) => adultAllowed() || GENRES.some(([s]) => s === slug) || !isAdultGenre(slug) && !isAdultGenre(name));
     if (!fullFilters()) {
       // Apps before 0.4 only show select, multi and toggle.
       return [sort, status, { id: "genres", label: "Genres", type: "multi", options: opts(genres) }];
@@ -234,7 +250,7 @@ globalThis.source = {
       .filter((p) => !/also known as|commonly searched|Whether you search|read .* online in English/i.test(p.text) && p.text.trim());
     const status = row(html, "Status");
     const body = (host.select(html, "body")[0] || { attrs: {} }).attrs.class || "";
-    const adult = /\badult-content\b/.test(body) || genres.some((g) => ADULT_GENRES.has(g.toLowerCase()));
+    const adult = /\badult-content\b/.test(body) || genres.some(isAdultGenre);
     return {
       id,
       title,

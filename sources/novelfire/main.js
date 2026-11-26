@@ -15,12 +15,12 @@
 
 const BASE = "https://novelfire.net";
 
-// From the site's advanced search form (/search-adv). The adult ones only show when the
-// person allows explicit sources.
+// The fallback genre list, used when the site's advanced search form (/search-adv) can't
+// be read. The form itself has the full list, including genres rated for adults.
 const GENRES = [
   ["3", "Action"], ["4", "Adventure"], ["46", "Anime"], ["47", "Arts"], ["5", "Comedy"], ["24", "Drama"],
   ["44", "Eastern"], ["48", "Fan-fiction"], ["6", "Fantasy"], ["19", "Game"], ["25", "Gender Bender"],
-  ["7", "Harem"], ["12", "Historical"], ["37", "Horror"], ["49", "Isekai"], ["2", "Josei"], ["45", "Lgbt+"],
+  ["12", "Historical"], ["37", "Horror"], ["49", "Isekai"], ["2", "Josei"], ["45", "Lgbt+"],
   ["50", "Magic"], ["51", "Magical realism"], ["52", "Manhua"], ["15", "Martial Arts"], ["34", "Mecha"],
   ["53", "Military"], ["54", "Modern life"], ["55", "Movies"], ["16", "Mystery"], ["64", "Other"],
   ["9", "Psychological"], ["56", "Realistic fiction"], ["43", "Reincarnation"], ["1", "Romance"],
@@ -29,8 +29,46 @@ const GENRES = [
   ["58", "System"], ["32", "Tragedy"], ["63", "Urban"], ["59", "Urban life"], ["60", "Video games"],
   ["61", "War"], ["31", "Wuxia"], ["23", "Xianxia"], ["22", "Xuanhuan"], ["14", "Yaoi"], ["62", "Yuri"],
 ];
-const ADULT_GENRES = [["28", "Adult"], ["26", "Ecchi"], ["8", "Mature"], ["29", "Smut"]];
-const ADULT_NAMES = new Set(ADULT_GENRES.map(([, name]) => name.toLowerCase()));
+
+// Genres rated for adults are recognised by a short hash of their lowercased name, so the
+// names don't have to be written out here. They only show when the person allows explicit
+// sources, and a novel tagged with one is rated Mature.
+const ADULT_KEYS = new Set(["b6517d0f", "90c95ec1", "84f60e52", "34670561", "d7539744"]);
+// Genres that are never offered, whatever the setting.
+const NEVER_KEYS = new Set(["7fd074c1", "29bba438"]);
+
+function genreKey(name) {
+  let h = 0x811c9dc5;
+  for (const ch of String(name).trim().toLowerCase()) {
+    h ^= ch.codePointAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+const isAdultGenre = (name) => ADULT_KEYS.has(genreKey(name));
+
+let siteGenres = null;
+let genresTried = false;
+
+/** The genre checkboxes from the site's advanced search form, as [id, name]. */
+async function genreList() {
+  if (siteGenres || genresTried) return siteGenres || GENRES;
+  genresTried = true;
+  try {
+    const html = await get(`${BASE}/search-adv`);
+    const found = [];
+    for (const label of host.select(html, "label")) {
+      const input = host.select(label.outerHTML, "input")[0];
+      if (!input || input.attrs.name !== "categories[]" || !/^\d+$/.test(input.attrs.value || "")) continue;
+      const name = decode(label.text).trim();
+      if (name && !NEVER_KEYS.has(genreKey(name)) && !found.some(([id]) => id === input.attrs.value)) found.push([input.attrs.value, name]);
+    }
+    if (found.length >= 10) siteGenres = found;
+  } catch (_) {
+    // Use the built-in list.
+  }
+  return siteGenres || GENRES;
+}
 
 const SORTS = [
   ["rank-top", "Rank"],
@@ -164,7 +202,8 @@ async function lookupTags(term) {
 async function advancedURL(pageNumber, filters) {
   const f = filters || {};
   const one = (id, fallback) => (f[id] && f[id][0]) || fallback;
-  const genreID = Object.fromEntries(GENRES.concat(ADULT_GENRES).map(([id, name]) => [name.toLowerCase(), id]));
+  const named = (f.genres || []).concat(f["genres.exclude"] || []).some((v) => !/^\d+$/.test(v));
+  const genreID = Object.fromEntries((named ? await genreList() : GENRES).concat(GENRES).map(([id, name]) => [name.toLowerCase(), id]));
   const genre = (v) => (/^\d+$/.test(v) ? v : genreID[String(v).toLowerCase()]);
   const included = (f.genres || []).map(genre).filter(Boolean);
   const excluded = (f["genres.exclude"] || []).map(genre).filter(Boolean);
@@ -206,7 +245,7 @@ globalThis.source = {
   },
 
   async getFilters() {
-    const genres = adultAllowed() ? GENRES.concat(ADULT_GENRES).sort((a, b) => a[1].localeCompare(b[1])) : GENRES;
+    const genres = (await genreList()).filter(([, name]) => adultAllowed() || !isAdultGenre(name));
     const sort = { id: "sort", label: "Sort by", type: "select", default: ["rank-top"], options: opts(SORTS) };
     const status = { id: "status", label: "Status", type: "select", default: ["-1"], options: opts(STATUSES) };
     if (!fullFilters()) {
@@ -283,7 +322,7 @@ globalThis.source = {
       summaryHTML: summaryHTML || undefined,
       url: `${BASE}/book/${id}`,
       format: "novel",
-      rating: genres.some((g) => ADULT_NAMES.has(g.toLowerCase())) ? "Mature" : undefined,
+      rating: genres.some(isAdultGenre) ? "Mature" : undefined,
       tags: genres,
       chapterCount: stat("Chapters"),
       status: status ? status.charAt(0).toUpperCase() + status.slice(1).toLowerCase() : undefined,

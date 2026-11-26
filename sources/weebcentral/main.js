@@ -24,15 +24,52 @@ const SORTS = [
 ];
 const TYPES = ["Manga", "Manhwa", "Manhua", "OEL"];
 const STATUSES = ["Ongoing", "Complete", "Hiatus", "Canceled"];
-// The genre list from the site's search page. The adult ones only show when the person
-// allows explicit sources.
+// The fallback genre list, used when the site's search page can't be read. The search page
+// itself has the full list, including genres rated for adults.
 const GENRES = [
-  "Action", "Adventure", "Comedy", "Doujinshi", "Drama", "Fantasy", "Gender Bender", "Harem",
+  "Action", "Adventure", "Comedy", "Doujinshi", "Drama", "Fantasy", "Gender Bender",
   "Historical", "Horror", "Isekai", "Josei", "Martial Arts", "Mecha", "Mystery", "Psychological",
   "Romance", "School Life", "Sci-fi", "Seinen", "Shoujo", "Shoujo Ai", "Shounen", "Shounen Ai",
   "Slice of Life", "Sports", "Supernatural", "Tragedy", "Yaoi", "Yuri",
 ];
-const ADULT_GENRES = ["Adult", "Ecchi", "Hentai", "Mature", "Smut"];
+
+// Genres rated for adults are recognised by a short hash of their lowercased name, so the
+// names don't have to be written out here. They only show when the person allows explicit
+// sources.
+const ADULT_KEYS = new Set(["b6517d0f", "90c95ec1", "84f60e52", "34670561", "d7539744"]);
+// Genres that are never offered, whatever the setting.
+const NEVER_KEYS = new Set(["7fd074c1", "29bba438"]);
+
+function genreKey(name) {
+  let h = 0x811c9dc5;
+  for (const ch of String(name).trim().toLowerCase()) {
+    h ^= ch.codePointAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+let siteGenres = null;
+let genresTried = false;
+
+/** The genre checkboxes from the site's search page. Each has a hidden input "tag-<name>-value". */
+async function genreList() {
+  if (siteGenres || genresTried) return siteGenres || GENRES;
+  genresTried = true;
+  try {
+    const html = await get(`${BASE}/search`);
+    const found = [];
+    for (const input of host.select(html, "input")) {
+      if (!/^tag-.+-value$/.test(input.attrs.id || "")) continue;
+      const name = decode(input.attrs.value || "").trim();
+      if (name && !NEVER_KEYS.has(genreKey(name)) && !found.includes(name)) found.push(name);
+    }
+    if (found.length >= 10) siteGenres = found;
+  } catch (_) {
+    // Use the built-in list.
+  }
+  return siteGenres || GENRES;
+}
 
 const decode = (s) =>
   String(s ?? "")
@@ -105,7 +142,7 @@ globalThis.source = {
     ];
     // Apps before 0.4 only show select, multi and toggle.
     if (!(host.filterTypes || []).includes("tags")) return basic;
-    const genres = adultAllowed() ? GENRES.concat(ADULT_GENRES).sort() : GENRES;
+    const genres = (await genreList()).filter((g) => adultAllowed() || !ADULT_KEYS.has(genreKey(g)));
     return [
       { ...basic[0], group: "Sort" },
       {

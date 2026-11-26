@@ -80,7 +80,7 @@ test("genres that are only left out use the site's exclude mode", async () => {
   const fetchImpl = fakeFetch([[/\/search-adv\?/, await fixture("adv.html")]]);
   const { call } = await loadSource(dir, { fetchImpl });
   await call("search", "", 1, { "genres.exclude": ["Horror", "Romance"] });
-  const url = new URL(fetchImpl.calls[0].url);
+  const url = new URL(fetchImpl.calls.at(-1).url);
   assert.equal(url.searchParams.get("ctgcon"), "exclude");
   assert.deepEqual(url.searchParams.getAll("categories[]"), ["37", "1"]);
   assert.equal(url.searchParams.get("totalchapter"), "0");
@@ -153,20 +153,39 @@ test("browse lists use the filter page sorted", async () => {
   await assert.rejects(call("getListing", "nope", 1), /Unknown list/);
 });
 
-test("filters: full set on new apps, adult genres only when explicit sources are allowed", async () => {
-  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
+// A trimmed copy of the genre checkboxes on /search-adv.
+const advForm = `<form><div class="chk-list">` +
+  [["3", "Action"], ["28", "Adult"], ["4", "Adventure"], ["5", "Comedy"], ["24", "Drama"], ["6", "Fantasy"],
+    ["37", "Horror"], ["15", "Martial Arts"], ["16", "Mystery"], ["43", "Reincarnation"], ["1", "Romance"], ["99", "Space Opera"]]
+    .map(([id, name]) => `<label class="chk-item">${name}<input type="checkbox" value="${id}" name="categories[]"><span class="checkmark"></span></label>`)
+    .join("") + `</div></form>`;
+
+test("filters: full set on new apps, genres from the site's form, adult genres only when explicit sources are allowed", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([[/\/search-adv$/, advForm]]) });
   const filters = await call("getFilters");
   assert.deepEqual(filters.map((f) => f.id), ["sort", "status", "origin", "chapters", "rating", "genres", "genreMatch", "tags", "tagMatch"]);
   const genres = filters.find((f) => f.id === "genres");
   assert.equal(genres.type, "tags");
   assert.ok(genres.excludable);
+  assert.ok(genres.options.some((o) => o.id === "Space Opera"), "genres the built-in list lacks come from the site");
   assert.ok(!genres.options.some((o) => o.id === "Adult"));
   assert.equal(filters.find((f) => f.id === "chapters").type, "range");
   assert.ok(filters.find((f) => f.id === "tags").suggests);
 
-  const explicit = await loadSource(dir, { fetchImpl: fakeFetch([]), settings: { maxRating: "explicit" } });
+  const explicit = await loadSource(dir, { fetchImpl: fakeFetch([[/\/search-adv$/, advForm]]), settings: { maxRating: "explicit" } });
   const all = await explicit.call("getFilters");
   assert.ok(all.find((f) => f.id === "genres").options.some((o) => o.id === "Adult"));
+});
+
+test("a genre the site's form lists is sent by its ID, and the built-in list covers a missing form", async () => {
+  const fetchImpl = fakeFetch([[/\/search-adv$/, advForm], [/\/search-adv\?/, await fixture("adv.html")]]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  await call("search", "", 1, { genres: ["Space Opera"] });
+  assert.deepEqual(new URL(fetchImpl.calls.at(-1).url).searchParams.getAll("categories[]"), ["99"]);
+
+  const offline = await loadSource(dir, { fetchImpl: fakeFetch([]) });
+  const genres = (await offline.call("getFilters")).find((f) => f.id === "genres");
+  assert.ok(genres.options.some((o) => o.id === "Action"));
 });
 
 test("apps before 0.4 get sort, status and a genre menu", async () => {
@@ -175,7 +194,7 @@ test("apps before 0.4 get sort, status and a genre menu", async () => {
   const filters = await call("getFilters");
   assert.deepEqual(filters.map((f) => [f.id, f.type]), [["sort", "select"], ["status", "select"], ["genres", "multi"]]);
   await call("search", "", 1, { genres: ["3"] });
-  assert.deepEqual(new URL(fetchImpl.calls[0].url).searchParams.getAll("categories[]"), ["3"]);
+  assert.deepEqual(new URL(fetchImpl.calls.at(-1).url).searchParams.getAll("categories[]"), ["3"]);
 });
 
 test("idFromURL reads novel and chapter links", async () => {
