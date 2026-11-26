@@ -39,7 +39,7 @@ const GENRES = [
 const ADULT_GENRES = new Set(["mature", "adult", "smut", "hentai", "ecchi"]);
 
 // The genre list read from the site's own search form, so genres the list above misses
-// (like Harem) can still be picked. Falls back to the list above if the form can't be read.
+// (like Martial Arts) can still be picked. Falls back to the list above if the form can't be read.
 let siteGenres = null;
 
 async function genreList() {

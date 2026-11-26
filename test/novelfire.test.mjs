@@ -46,13 +46,13 @@ test("title search reads cards and the next-page link", async () => {
 test("an empty search uses the filter page and maps every filter", async () => {
   const fetchImpl = fakeFetch([
     [/\/ajax\/getTags\?term=Reincarnation/, JSON.stringify({ status: 200, data: [{ id: 315, name: "Reincarnated in Another World" }, { id: 41, name: "Reincarnation" }] })],
-    [/\/ajax\/getTags\?term=Harem/, JSON.stringify({ status: 200, data: [{ id: 9, name: "Harem Seeking Protagonist" }] })],
+    [/\/ajax\/getTags\?term=Revenge/, JSON.stringify({ status: 200, data: [{ id: 9, name: "Revenge Plot" }] })],
     [/\/search-adv\?/, await fixture("adv.html")],
   ]);
   const { call } = await loadSource(dir, { fetchImpl });
   const page = await call("search", "", 3, {
     sort: ["monthly-view"], status: ["1"], origin: ["1", "4"], chapters: ["100", ""], rating: ["4"],
-    genres: ["Action", "Fantasy"], genreMatch: ["or"], tags: ["Reincarnation"], "tags.exclude": ["Harem"],
+    genres: ["Action", "Fantasy"], genreMatch: ["or"], tags: ["Reincarnation"], "tags.exclude": ["Revenge"],
   });
 
   const url = new URL(fetchImpl.calls.at(-1).url);
@@ -79,10 +79,10 @@ test("an empty search uses the filter page and maps every filter", async () => {
 test("genres that are only left out use the site's exclude mode", async () => {
   const fetchImpl = fakeFetch([[/\/search-adv\?/, await fixture("adv.html")]]);
   const { call } = await loadSource(dir, { fetchImpl });
-  await call("search", "", 1, { "genres.exclude": ["Harem", "Yaoi"] });
+  await call("search", "", 1, { "genres.exclude": ["Horror", "Romance"] });
   const url = new URL(fetchImpl.calls[0].url);
   assert.equal(url.searchParams.get("ctgcon"), "exclude");
-  assert.deepEqual(url.searchParams.getAll("categories[]"), ["7", "14"]);
+  assert.deepEqual(url.searchParams.getAll("categories[]"), ["37", "1"]);
   assert.equal(url.searchParams.get("totalchapter"), "0");
   assert.equal(url.searchParams.get("sort"), "rank-top");
 });
@@ -160,13 +160,13 @@ test("filters: full set on new apps, adult genres only when explicit sources are
   const genres = filters.find((f) => f.id === "genres");
   assert.equal(genres.type, "tags");
   assert.ok(genres.excludable);
-  assert.ok(!genres.options.some((o) => o.id === "Smut"));
+  assert.ok(!genres.options.some((o) => o.id === "Adult"));
   assert.equal(filters.find((f) => f.id === "chapters").type, "range");
   assert.ok(filters.find((f) => f.id === "tags").suggests);
 
   const explicit = await loadSource(dir, { fetchImpl: fakeFetch([]), settings: { maxRating: "explicit" } });
   const all = await explicit.call("getFilters");
-  assert.ok(all.find((f) => f.id === "genres").options.some((o) => o.id === "Smut"));
+  assert.ok(all.find((f) => f.id === "genres").options.some((o) => o.id === "Adult"));
 });
 
 test("apps before 0.4 get sort, status and a genre menu", async () => {
