@@ -184,3 +184,26 @@ test("genres come from the site's search form, and typed names the list lacks st
   const url = new URL(fetchImpl.calls.at(-1).url);
   assert.deepEqual(url.searchParams.getAll("genre[]"), ["reincarnation", "martial-arts", "office-workers"]);
 });
+
+test("genre results keep paging when the page has a load-more button instead of page links", async () => {
+  const html = (await fixture("search.html"))
+    .replace(/<div class="wp-pagenavi"[\s\S]*?<\/div>/, '<div class="navigation-ajax"><a class="load-ajax" href="#">Load more</a></div>');
+  assert.ok(!html.includes("nextpostslink"));
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([[/\/search\//, html]]) });
+  assert.equal((await call("search", "", 1, { genres: ["Action"] })).hasMore, true);
+});
+
+test("genre results keep paging from the result count when there are no page links", async () => {
+  const html = (await fixture("search.html")).replace(/<div class="wp-pagenavi"[\s\S]*?<\/div>/, "");
+  assert.ok(!html.includes("nextpostslink"));
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([[/\/search\//, html]]) });
+  // 354 results, 2 on each page here: page 3 has more, page 177 is the last.
+  assert.equal((await call("search", "", 3, { genres: ["Action"] })).hasMore, true);
+  assert.equal((await call("search", "", 177, { genres: ["Action"] })).hasMore, false);
+});
+
+test("a page past the end ends the results instead of showing an error", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
+  assert.deepEqual(await call("search", "", 9, { genres: ["Action"] }), { results: [], hasMore: false });
+  await assert.rejects(call("search", "", 1, {}), /doesn't have that page/);
+});
