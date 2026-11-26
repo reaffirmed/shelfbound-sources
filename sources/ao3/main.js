@@ -283,10 +283,31 @@ const FULL_FILTERS = [
   { id: "creators", label: "Author", type: "text", group: "More", placeholder: "Pseud or username" },
 ];
 
+// Date ranges, for apps that can show them (0.5.6 and later): filter ID, label, AO3's
+// search field. AO3's search box takes Elasticsearch ranges like
+// revised_at:[2024-01-01 TO 2024-06-30], with * for an open end.
+const DATES = [
+  ["updatedBetween", "Updated", "revised_at"],
+  ["postedBetween", "Posted", "created_at"],
+];
+const DATE_FILTERS = DATES.map(([id, label]) => ({ id, label, type: "date", group: "Dates", placeholder: label.toLowerCase() }));
+
 /** True when the app can show the full set of filters. */
 function fullFilters() {
   const kinds = host.filterTypes || [];
   return ["text", "range", "tags"].every((k) => kinds.includes(k));
+}
+
+function dateFilters() {
+  return (host.filterTypes || []).includes("date");
+}
+
+/** ["2024-01-01", ""] to "revised_at:[2024-01-01 TO *]", or "" with no dates. */
+function dateQuery(field, pair) {
+  const [from, to] = (pair || []).map((v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : ""));
+  if (!from && !to) return "";
+  const [a, b] = from && to && from > to ? [to, from] : [from, to];
+  return `${field}:[${a || "*"} TO ${b || "*"}]`;
 }
 
 /** "1000"-"5000" to "1000-5000", "1000"-"" to ">999", ""-"5000" to "<5001". */
@@ -319,8 +340,9 @@ function searchURL(query, pageNumber, filters, extra) {
   excluded.push(...all("warnings.exclude"), ...all("othertags.exclude"));
   const warningID = Object.fromEntries(WARNINGS.map(([id, name]) => [name, id]));
 
+  const dateTerms = DATES.map(([id, , field]) => dateQuery(field, f[id])).filter(Boolean);
   const params = [
-    ["work_search[query]", query],
+    ["work_search[query]", [String(query || "").trim()].concat(dateTerms).filter(Boolean).join(" ")],
     ["work_search[title]", one("title")],
     ["work_search[creators]", one("creators")],
     ["work_search[sort_column]", one("sort") || "_score"],
@@ -389,7 +411,8 @@ globalThis.source = {
   },
 
   async getFilters() {
-    return fullFilters() ? FULL_FILTERS : FILTERS;
+    if (!fullFilters()) return FILTERS;
+    return dateFilters() ? FULL_FILTERS.concat(DATE_FILTERS) : FULL_FILTERS;
   },
 
   // Tag names as you type, from AO3's own autocomplete.
