@@ -160,6 +160,20 @@ function searchURL(query, pageNumber, filters) {
   return BASE + path + "?" + params.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&");
 }
 
+/**
+ * Whether the results go on past this page. Filtered searches don't always draw the
+ * numbered page links: some pages load more with a button instead, so the result count
+ * in the heading ("354 results") is checked too.
+ */
+function morePages(html, page, perPage) {
+  if (host.select(html, "a.nextpostslink, .nav-previous a, .wp-pagenavi a.next, a.next.page-numbers").length) return true;
+  if (host.select(html, ".navigation-ajax, #navigation-ajax, .load-ajax").length) return true;
+  const heading = host.select(html, ".c-blog__heading h1, .c-blog__heading .h4, h1.h4, .search-wrap .h4")[0];
+  const m = heading && /([\d,.]+)\s+results?/i.exec(heading.text);
+  if (m) return Number(m[1].replace(/[,.]/g, "")) > page * perPage;
+  return false;
+}
+
 /** Text of a .post-content_item row by its heading, e.g. "Status" -> "Completed". */
 function row(html, heading) {
   const item = host.select(html, ".post-content_item").find((r) => {
@@ -215,10 +229,19 @@ globalThis.source = {
   },
 
   async search(query, pageNumber, filters) {
-    const html = await get(searchURL(query, pageNumber, filters));
+    const page = Math.max(1, Number(pageNumber) || 1);
+    let html;
+    try {
+      html = await get(searchURL(query, page, filters));
+    } catch (e) {
+      // Past the last page the site answers 404. That's the end of the results, not an error.
+      if (page > 1 && /doesn't have that page/.test(e.message)) return { results: [], hasMore: false };
+      throw e;
+    }
     const seen = new Set();
-    const results = host.select(html, ".page-item-detail").map(card).filter((r) => r && !seen.has(r.id) && seen.add(r.id));
-    return { results, hasMore: host.select(html, "a.nextpostslink, .nav-previous a").length > 0 };
+    const cards = host.select(html, ".page-item-detail, .c-tabs-item__content");
+    const results = cards.map(card).filter((r) => r && !seen.has(r.id) && seen.add(r.id));
+    return { results, hasMore: results.length > 0 && morePages(html, page, cards.length) };
   },
 
   async getWork(id) {
