@@ -166,3 +166,21 @@ test("idFromURL reads series and chapter links", async () => {
   assert.equal(await call("idFromURL", `https://toonily.com/serie/${SERIES}/chapter-12/`), SERIES);
   assert.equal(await call("idFromURL", `https://example.com/serie/${SERIES}/`), null);
 });
+
+test("genres come from the site's search form, and typed names the list lacks still go as slugs", async () => {
+  const form = `<form class="search-advanced-form"><div class="checkbox-group">` +
+    ["action:Action", "harem:Harem", "martial-arts:Martial Arts", "romance:Romance", "drama:Drama", "comedy:Comedy",
+      "fantasy:Fantasy", "isekai:Isekai", "horror:Horror", "mystery:Mystery", "smut:Smut"]
+      .map((pair) => { const [slug, name] = pair.split(":"); return `<div class="checkbox"><input id="${slug}" value="${slug}" name="genre[]" type="checkbox"><label for="${slug}"> ${name}</label></div>`; })
+      .join("") + `</div></form>`;
+  const fetchImpl = fakeFetch([[/\?s=&post_type=wp-manga/, form], [/\/search\//, await fixture("search.html")]]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  const genres = (await call("getFilters")).find((f) => f.id === "genres").options.map((o) => o.label);
+  assert.ok(genres.includes("Harem"));
+  assert.ok(genres.includes("Martial Arts"));
+  assert.ok(!genres.includes("Smut"), "adult genres stay hidden unless allowed");
+
+  await call("search", "", 1, { genres: ["Harem", "Martial Arts", "Office Workers"] });
+  const url = new URL(fetchImpl.calls.at(-1).url);
+  assert.deepEqual(url.searchParams.getAll("genre[]"), ["harem", "martial-arts", "office-workers"]);
+});
