@@ -11,7 +11,7 @@ https://reaffirmed.github.io/shelfbound-sources/
 | Weeb Central | Manga, manhwa, manhua | Mature | Adult series only show when Settings → Show sources rated up to is Explicit. On app 0.4 and later, search by genre (include or leave out), anime adaptation and order |
 | Archive of Our Own | Fic | Explicit | Needs Settings → Show sources rated up to set to Explicit. One request every 3 seconds. Sign in under Settings → Accounts for restricted works, your bookmarks, Marked for Later, history and subscriptions, and Mark for Later, Subscribe and Kudos on a work's page. On app 0.4 and later, the Filters screen matches AO3's own search: fandoms, characters, relationships and tags (with AO3's suggestions, include or leave out), warnings, categories, word, kudos and hits ranges, dates, title, author and 24 languages |
 | NovelFire | Web and light novels | Mature | Text reader. Title search, or leave the search box empty to use the filters: genres (include or leave out), tags with NovelFire's suggestions, status, original language, chapter count, reader rating and sort. Adult genres only show when Settings → Show sources rated up to is Explicit. A long novel's chapter list loads 100 chapters a page, so the first open takes a while |
-| Toonily | Manhwa | Mature | Webtoon reader. Search by genre, status, writer, artist and sort. Most of Toonily's catalog is adult: it only shows in search and Discover when Settings → Show sources rated up to is Explicit |
+| Toonily | Manhwa | Mature | Webtoon reader. Search by genre, status, writer, artist and sort. Regular series show at Mature. Most of Toonily's catalog is adult, and adult series only show in search and Discover when Settings → Show sources rated up to is Explicit |
 
 ## How publishing works
 
