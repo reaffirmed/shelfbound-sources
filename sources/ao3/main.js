@@ -280,7 +280,7 @@ const FULL_FILTERS = [
     placeholder: "Any AO3 tag" },
   ...RANGES.map(([id, label, , unit]) => ({ id, label, type: "range", group: "Stats", placeholder: unit || undefined })),
   { id: "title", label: "Title", type: "text", group: "More", placeholder: "Words in the title" },
-  { id: "creators", label: "Author", type: "text", group: "More", placeholder: "Pseud or username" },
+  { id: "creators", label: "Author", type: "text", group: "More", placeholder: "Pseud or username", workField: "authors" },
 ];
 
 // Date ranges, for apps that can show them (0.5.6 and later): filter ID, label, AO3's
@@ -442,6 +442,18 @@ globalThis.source = {
     const listing = LISTINGS.find((l) => l.id === id);
     if (!listing) throw new Error("Unknown list: " + id);
     return globalThis.source.search("", pageNumber, { sort: [listing.sort] }, { revised: listing.revised });
+  },
+
+  // The works in a series, in the series' order, for apps that can show it (0.6 and later).
+  async getSeries(id, pageNumber) {
+    const html = await page(`${BASE}/series/${encodeURIComponent(id)}?page=${pageNumber || 1}`);
+    const results = host.select(html, "ul.series.work.index.group > li.work.blurb, ul.index.group > li.work.blurb, ol.index.group > li.work.blurb")
+      .map(blurb).filter(Boolean);
+    const seen = new Set();
+    return {
+      results: results.filter((r) => !seen.has(r.id) && seen.add(r.id)),
+      hasMore: host.select(html, "ol.pagination li.next a").length > 0,
+    };
   },
 
   async search(query, pageNumber, filters, extra) {
