@@ -222,6 +222,23 @@ test("browse lists read AO3's search with a sort and no query", async () => {
   await assert.rejects(call("getListing", "nope", 1), /Unknown list/);
 });
 
+test("a series lists its works in order", async () => {
+  const fetchImpl = fakeFetch([[/\/series\/77/, { body: await fixture("series.html") }]]);
+  const { call } = await loadSource(dir, { fetchImpl });
+  const page = await call("getSeries", "77", 1);
+  assert.match(fetchImpl.calls[0], /\/series\/77\?page=1$/);
+  assert.deepEqual(page.results.map((w) => w.id), ["1001", "1002"]);
+  assert.equal(page.results[1].title, "Salt in the Lamp Oil");
+  assert.deepEqual(page.results[0].authors, ["fern"]);
+  assert.equal(page.hasMore, true);
+});
+
+test("the author filter says it searches by author", async () => {
+  const { call } = await loadSource(dir, { fetchImpl: fakeFetch([]) });
+  const filters = await call("getFilters");
+  assert.equal(filters.find((f) => f.id === "creators").workField, "authors");
+});
+
 // Signed in. The app passes the username as the "account" setting and sends AO3's
 // session cookie itself, so these pages are what AO3 shows a signed-in reader.
 
